@@ -1,0 +1,2771 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>The Guardian's Journey — Search for the Calm Crystals</title>
+  <link rel="stylesheet" href="css/style.css" />
+  <!-- Three.js via importmap — no build tool needed -->
+  <script type="importmap">
+  {
+    "imports": {
+      "three": "https://unpkg.com/three@0.168.0/build/three.module.js",
+      "three/addons/": "https://unpkg.com/three@0.168.0/examples/jsm/"
+    }
+  }
+  </script>
+</head>
+<body>
+
+  <!-- Three.js renders directly to this canvas -->
+  <canvas id="game-canvas"></canvas>
+
+  <!-- ===== VIGNETTE (tinted by regulation state) ===== -->
+  <div id="vignette"></div>
+
+  <!-- ===== HUD (top-left) ===== -->
+  <div id="hud">
+    <div id="regulation-row">
+      <span id="heart-icon">💚</span>
+      <div id="meter-track">
+        <div id="meter-fill"></div>
+      </div>
+      <span id="state-label">🌿 Calm &amp; Ready</span>
+    </div>
+    <div id="crystal-row" style="display:flex;align-items:center;gap:6px;">
+      <span>💎</span>
+      <span id="crystal-count">0 / 6</span>
+    </div>
+    <div id="biome-label">Explore the world!</div>
+  </div>
+
+  <!-- ===== CONTROLS HINT (top-right) ===== -->
+  <div id="controls-hint">
+    <kbd>W S</kbd> Move &nbsp;|&nbsp;
+    <kbd>A D</kbd> Turn &nbsp;|&nbsp;
+    <kbd>Mouse drag</kbd> Camera &nbsp;|&nbsp;
+    <kbd>Scroll</kbd> Zoom &nbsp;|&nbsp;
+    <kbd>SPACE</kbd> Breathe &nbsp;|&nbsp;
+    <kbd>E</kbd> Talk
+  </div>
+
+  <!-- ===== BREATHING INDICATOR (center) ===== -->
+  <div id="breathing-hint" style="display:none">
+    🌬️ Breathe IN… — Hold SPACE &nbsp; (cycle <span id="breath-cycle">1</span> / 2)
+  </div>
+
+  <!-- ===== INTERACT PROMPT ===== -->
+  <div id="interact-prompt" style="display:none">
+    Press <kbd>E</kbd> to help
+  </div>
+
+  <!-- ===== DIALOGUE OVERLAY ===== -->
+  <div id="dialogue-overlay" style="display:none">
+    <div id="dialogue-box">
+      <div id="dialogue-portrait"></div>
+      <div id="dialogue-content">
+        <h3 id="dialogue-name"></h3>
+        <p id="dialogue-text"></p>
+        <div id="dialogue-choices"></div>
+        <p id="dialogue-feedback" style="display:none"></p>
+        <button id="dialogue-continue" style="display:none">Continue →</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== SOCIAL STORY OVERLAY (shown first) ===== -->
+  <div id="social-story-overlay">
+    <div id="social-story-box">
+      <div id="story-icon">🌤️</div>
+      <p id="story-text"></p>
+      <div id="story-dots"></div>
+      <button id="story-next-btn">Next →</button>
+    </div>
+  </div>
+
+  <!-- ===== POST-QUEST REFLECTION ===== -->
+  <div id="reflection-overlay" style="display:none">
+    <div id="reflection-box">
+      <h2>🌟 Quest Complete, Guardian!</h2>
+      <p id="reflection-intro"></p>
+      <p class="reflection-prompt">
+        Which <strong>Truth Lantern</strong> statement will you carry with you tomorrow at school?
+      </p>
+      <div id="reflection-choices"></div>
+      <div id="reflection-chosen" style="display:none">
+        <p>Your brave thought to remember:</p>
+        <blockquote id="reflection-statement"></blockquote>
+        <p class="reflection-credit">Made with 💙 for Ms. Valerie's students</p>
+        <button id="reflection-close">✨ I'll remember this!</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== TOAST NOTIFICATION ===== -->
+  <div id="toast"></div>
+
+  <!-- ===== WISDOM STONE OVERLAY ===== -->
+  <div id="wisdom-overlay" style="display:none">
+    <div id="wisdom-box">
+      <div id="wisdom-icon">
+        <div id="wisdom-portrait"></div>
+      </div>
+      <div id="wisdom-body">
+        <h3 id="wisdom-name"></h3>
+        <blockquote id="wisdom-quote"></blockquote>
+        <button id="wisdom-close">✨ Carry this wisdom</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- ===== MUTE BUTTON ===== -->
+  <button id="mute-btn" title="Toggle music"
+    style="position:fixed;bottom:18px;right:18px;background:rgba(8,15,40,0.85);border:1px solid #2DD4BF;
+           border-radius:50%;width:40px;height:40px;font-size:1.2rem;cursor:pointer;z-index:60;color:#fff;
+           display:flex;align-items:center;justify-content:center;">&#x1F50A;</button>
+
+  <script type="module">
+import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+
+/* ================================================================
+   TOAST
+================================================================ */
+function showToast(msg, duration = 3200) {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.classList.add('show');
+  clearTimeout(el._toastTimer);
+  el._toastTimer = setTimeout(() => el.classList.remove('show'), duration);
+}
+function showTutorial(msg) {
+  let el = document.getElementById('tutorial-tip');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'tutorial-tip';
+    el.style.cssText = 'position:fixed;top:46%;left:50%;transform:translate(-50%,-50%);' +
+      'background:rgba(8,15,40,0.96);border:2px solid #2DD4BF;border-radius:16px;' +
+      'padding:18px 26px;color:#E8F4F8;font-size:0.95rem;z-index:55;max-width:400px;' +
+      'text-align:center;pointer-events:none;transition:opacity 0.6s;line-height:1.55;white-space:pre-line;';
+    document.body.appendChild(el);
+  }
+  el.textContent = msg;
+  el.style.opacity = '1';
+  clearTimeout(el._tipTimer);
+  el._tipTimer = setTimeout(() => { el.style.opacity = '0'; }, 5800);
+}
+
+/* ================================================================
+   GAME MANAGER — GREEN / YELLOW / RED regulation state machine
+================================================================ */
+class GameManager {
+  constructor(scene) {
+    this.scene      = scene;
+    this.state      = 'GREEN';
+    this.shakeAmt   = 0;
+    this.vignetteEl = document.getElementById('vignette');
+    this.heartEl    = document.getElementById('heart-icon');
+    this.meterEl    = document.getElementById('meter-fill');
+    this.labelEl    = document.getElementById('state-label');
+    this._applyState();
+    this.updateUI();
+  }
+  setState(newState) {
+    if (this.state === newState) return;
+    this.state = newState;
+    this._applyState();
+    this.updateUI();
+  }
+  _applyState() {
+    const s = this.state;
+    if (s === 'GREEN') {
+      this.scene.fog = new THREE.FogExp2(0x87CEEB, 0.007);
+      this.scene.background.set(0x87CEEB);
+      this.vignetteEl.style.opacity    = '0';
+      this.vignetteEl.style.background = 'transparent';
+      this.shakeAmt = 0;
+    } else if (s === 'YELLOW') {
+      this.scene.fog = new THREE.FogExp2(0xB0947A, 0.022);
+      this.scene.background.set(0xC8956A);
+      this.vignetteEl.style.opacity    = '0.28';
+      this.vignetteEl.style.background = 'radial-gradient(ellipse at center, transparent 48%, rgba(180,90,0,0.65) 100%)';
+      this.shakeAmt = 0.016;
+    } else {
+      this.scene.fog = new THREE.FogExp2(0x3A0A0A, 0.042);
+      this.scene.background.set(0x5A0A0A);
+      this.vignetteEl.style.opacity    = '0.58';
+      this.vignetteEl.style.background = 'radial-gradient(ellipse at center, transparent 33%, rgba(160,0,0,0.85) 100%)';
+      this.shakeAmt = 0.042;
+    }
+  }
+  updateUI() {
+    const M = {
+      GREEN:  { pct: 100, clr: '#22C55E', label: '🌿 Calm & Ready',    heart: '💚' },
+      YELLOW: { pct:  52, clr: '#F59E0B', label: '😰 Feeling Nervous',  heart: '💛' },
+      RED:    { pct:  18, clr: '#EF4444', label: '😤 Overwhelmed',       heart: '❤️' },
+    };
+    const d = M[this.state];
+    this.meterEl.style.width      = d.pct + '%';
+    this.meterEl.style.background = d.clr;
+    this.labelEl.textContent      = d.label;
+    this.heartEl.textContent      = d.heart;
+  }
+  update(delta, camera) {
+    if (this.shakeAmt <= 0) return;
+    camera.position.x += (Math.random() - 0.5) * this.shakeAmt;
+    camera.position.y += (Math.random() - 0.5) * this.shakeAmt * 0.4;
+  }
+}
+
+/* ================================================================
+   PLAYER — capsule mesh, WASD tank controls, breathing mechanic
+================================================================ */
+const SPEEDS     = { GREEN: 5.0, YELLOW: 4.0, RED: 2.5 };
+const TURN_SPEED = 1.9;
+const BREATH_CYCLE_SEC     = 8;
+const BREATH_CYCLES_NEEDED = 2;
+
+// ── Roblox-style orbit camera state (module-level so Player.update can read it) ──
+let cameraYaw   = 0;    // horizontal angle around player (radians)
+let cameraPitch = 0.42; // vertical tilt (radians)
+let cameraDist  = 7.5;  // distance from player
+const CAM_PITCH_MIN = 0.10, CAM_PITCH_MAX = 1.30;
+const CAM_DIST_MIN  = 3,    CAM_DIST_MAX  = 18;
+
+class Player {
+  constructor(scene) {
+    this.isBreathing  = false;
+    this.breathTimer  = 0;
+    this.breathCycles = 0;
+    this.breathRing   = null;
+    this._breathHint  = document.getElementById('breathing-hint');
+    this._dropping    = false;   // true while falling from portal spawn
+    this._dropVY      = 0;       // current vertical velocity (units/s)
+    this._stepDist    = 0;       // accumulated travel for footstep sounds
+
+    // Placeholder group added immediately so the rest of the game can reference it
+    this.mesh = new THREE.Group();
+    scene.add(this.mesh);
+
+    // GLTFLoader requires an HTTP server — file:// protocol blocks binary fetches.
+    if (window.location.protocol === 'file:') {
+      this.mesh.add(this._buildFallbackMesh());
+      this._showServerNotice();
+    } else {
+      const loader = new GLTFLoader();
+      const loadMsg = document.createElement('div');
+      loadMsg.id = 'glb-loading';
+      loadMsg.style.cssText = 'position:fixed;bottom:80px;left:50%;transform:translateX(-50%);' +
+        'background:rgba(8,15,40,0.9);border:1px solid #2DD4BF;border-radius:20px;' +
+        'padding:8px 22px;color:#2DD4BF;font-size:0.88rem;z-index:60;pointer-events:none;';
+      loadMsg.textContent = '⏳ Loading 3D model…';
+      document.body.appendChild(loadMsg);
+
+      loader.load(
+        'assets/zelda.glb',
+        (gltf) => {
+          const el = document.getElementById('glb-loading');
+          if (el) el.remove();
+          const model = gltf.scene;
+
+          // Auto-scale to roughly 2 units tall
+          const box    = new THREE.Box3().setFromObject(model);
+          const height = box.max.y - box.min.y;
+          const scale  = 2.6 / (height || 1);
+          model.scale.setScalar(scale);
+
+          // Sit model on the ground (y=0)
+          box.setFromObject(model);
+          model.position.y -= box.min.y;
+
+          // Rotate 180° so the model's back faces the camera (character walks forward correctly)
+          model.rotation.y = Math.PI;
+
+          // Enable shadows + brighten GLB materials so they aren't darker than procedural meshes
+          model.traverse(child => {
+            if (child.isMesh) {
+              child.castShadow    = true;
+              child.receiveShadow = false;
+              // Prevent PBR material from absorbing all light
+              const mat = child.material;
+              if (mat) {
+                mat.roughness        = Math.min(mat.roughness ?? 1, 0.75);
+                mat.envMapIntensity  = 0;
+                mat.needsUpdate      = true;
+              }
+            }
+          });
+
+          // Calm aura glow
+          const aura = new THREE.PointLight(0x4ADE80, 0.55, 3.2);
+          aura.position.set(0, 1.2, 0);
+          model.add(aura);
+
+          this.mesh.add(model);
+          console.log('[Guardian] zelda.glb loaded ✓');
+          showToast('✨ Guardian model loaded!');
+        },
+        undefined,
+        (err) => {
+          const el = document.getElementById('glb-loading');
+          if (el) el.remove();
+          console.warn('[Guardian] GLB load failed, using fallback mesh:', err);
+          this.mesh.add(this._buildFallbackMesh());
+        }
+      );
+    }
+  }
+  _showServerNotice() {
+    const notice = document.createElement('div');
+    notice.style.cssText =
+      'position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);' +
+      'background:rgba(8,15,40,0.97);border:2px solid #FFD700;border-radius:18px;' +
+      'padding:30px 36px;z-index:999;max-width:480px;width:90%;text-align:center;' +
+      'color:#E8F4F8;font-family:system-ui,sans-serif;box-shadow:0 8px 50px rgba(0,0,0,0.8);';
+    notice.innerHTML =
+      '<div style="font-size:2.8rem;margin-bottom:10px">🗂️</div>' +
+      '<h3 style="color:#FFD700;margin-bottom:10px;font-size:1.1rem">Your 3D model needs a local server</h3>' +
+      '<p style="font-size:0.88rem;line-height:1.65;color:#CBD5E1;margin-bottom:14px">' +
+        'Browsers block <code style="color:#67E8F9">.glb</code> files when the page is opened via ' +
+        '<code style="color:#67E8F9">file://</code>. Run this once in PowerShell from the Zelda folder:' +
+      '</p>' +
+      '<pre style="background:rgba(0,0,0,0.45);border-radius:8px;padding:12px 16px;' +
+        'font-size:0.83rem;color:#4ADE80;text-align:left;margin-bottom:14px;overflow-x:auto">' +
+        'cd "d:\\VB Projects\\Zelda"\npython -m http.server 8080</pre>' +
+      '<p style="font-size:0.83rem;color:#94A3B8;margin-bottom:18px">' +
+        'Then open <strong style="color:#FFD700">http://localhost:8080</strong> in your browser.' +
+      '</p>' +
+      '<p style="font-size:0.78rem;color:#64748B;margin-bottom:18px">' +
+        'No Python? Install it free from <strong style="color:#94A3B8">python.org</strong>, ' +
+        'or use the VS Code <strong style="color:#94A3B8">Live Server</strong> extension (right-click index.html → Open with Live Server).' +
+      '</p>' +
+      '<button id="notice-close" style="background:#2DD4BF;color:#0D1B2A;border:none;' +
+        'border-radius:10px;padding:11px 28px;font-weight:700;font-size:0.95rem;cursor:pointer">' +
+        'Play with built-in model →' +
+      '</button>';
+    document.body.appendChild(notice);
+    document.getElementById('notice-close').addEventListener('click', () => notice.remove());
+  }
+  _buildFallbackMesh() {
+    const g = new THREE.Group();
+
+    // ── Materials ──────────────────────────────────────────────────
+    const skin    = new THREE.MeshStandardMaterial({ color: 0xFFCBA4, roughness: 0.8 });
+    const tunic   = new THREE.MeshStandardMaterial({ color: 0x22C55E, roughness: 0.6, metalness: 0.1 });
+    const armor   = new THREE.MeshStandardMaterial({ color: 0x15803D, roughness: 0.45, metalness: 0.3 });
+    const gold    = new THREE.MeshStandardMaterial({ color: 0xFFD700, roughness: 0.25, metalness: 0.9 });
+    const boot    = new THREE.MeshStandardMaterial({ color: 0x4A2810, roughness: 0.9 });
+    const hair    = new THREE.MeshStandardMaterial({ color: 0x7C3AED, roughness: 0.85 });
+    const cape    = new THREE.MeshStandardMaterial({ color: 0x4C1D95, roughness: 0.8, side: THREE.DoubleSide });
+    const collar  = new THREE.MeshStandardMaterial({ color: 0x6D28D9, roughness: 0.7 });
+    const eyeW    = new THREE.MeshStandardMaterial({ color: 0xFFFFFF });
+    const eyeP    = new THREE.MeshStandardMaterial({ color: 0x1E3A5F });
+    const eyeS    = new THREE.MeshStandardMaterial({ color: 0xFFFFFF, emissive: new THREE.Color(0xFFFFFF), emissiveIntensity: 0.9 });
+    const mouthM  = new THREE.MeshStandardMaterial({ color: 0xBB7060 });
+    const gem     = new THREE.MeshStandardMaterial({ color: 0x67E8F9, emissive: new THREE.Color(0x2DD4BF), emissiveIntensity: 1.2, metalness: 0.5, roughness: 0.1 });
+
+    // helper: create + add a mesh to group
+    const mk = (geo, mat, x=0, y=0, z=0, rx=0, ry=0, rz=0) => {
+      const m = new THREE.Mesh(geo, mat);
+      m.position.set(x, y, z);
+      m.rotation.set(rx, ry, rz);
+      m.castShadow = true;
+      g.add(m);
+      return m;
+    };
+
+    // ── Feet / boots ───────────────────────────────────────────────
+    mk(new THREE.BoxGeometry(0.18, 0.12, 0.26), boot, -0.16, 0.06, 0.04);
+    mk(new THREE.BoxGeometry(0.18, 0.12, 0.26), boot,  0.16, 0.06, 0.04);
+    // boot cuffs
+    mk(new THREE.CylinderGeometry(0.12, 0.11, 0.09, 8), boot, -0.16, 0.15, 0);
+    mk(new THREE.CylinderGeometry(0.12, 0.11, 0.09, 8), boot,  0.16, 0.15, 0);
+
+    // ── Legs ────────────────────────────────────────────────────────
+    mk(new THREE.CapsuleGeometry(0.11, 0.24, 6, 8), armor, -0.16, 0.28, 0);  // shins
+    mk(new THREE.CapsuleGeometry(0.11, 0.24, 6, 8), armor,  0.16, 0.28, 0);
+    mk(new THREE.CapsuleGeometry(0.13, 0.26, 6, 8), tunic, -0.16, 0.56, 0);  // thighs
+    mk(new THREE.CapsuleGeometry(0.13, 0.26, 6, 8), tunic,  0.16, 0.56, 0);
+
+    // ── Belt ───────────────────────────────────────────────────────
+    mk(new THREE.BoxGeometry(0.56, 0.1, 0.3),   boot, 0, 0.82, 0);
+    mk(new THREE.BoxGeometry(0.13, 0.1, 0.05),  gold, 0, 0.82, 0.16);   // buckle
+
+    // ── Torso ──────────────────────────────────────────────────────
+    mk(new THREE.BoxGeometry(0.52, 0.56, 0.28), tunic, 0, 1.1, 0);
+    // chest plate
+    mk(new THREE.BoxGeometry(0.4, 0.38, 0.06), armor, 0, 1.14, 0.15);
+    // crystal gem on chest
+    mk(new THREE.OctahedronGeometry(0.09, 0), gem, 0, 1.24, 0.2);
+    // trim lines on chest plate (thin gold strips)
+    mk(new THREE.BoxGeometry(0.38, 0.025, 0.04), gold, 0, 1.07, 0.18);
+    mk(new THREE.BoxGeometry(0.38, 0.025, 0.04), gold, 0, 1.31, 0.18);
+
+    // ── Shoulder pauldrons ─────────────────────────────────────────
+    mk(new THREE.SphereGeometry(0.16, 8, 6, 0, Math.PI*2, 0, Math.PI*0.65), armor, -0.36, 1.36, 0);
+    mk(new THREE.SphereGeometry(0.16, 8, 6, 0, Math.PI*2, 0, Math.PI*0.65), armor,  0.36, 1.36, 0);
+    // pauldron gold rim
+    mk(new THREE.TorusGeometry(0.14, 0.025, 6, 12, Math.PI), gold, -0.36, 1.29, 0, 0, 0, 0);
+    mk(new THREE.TorusGeometry(0.14, 0.025, 6, 12, Math.PI), gold,  0.36, 1.29, 0, 0, 0, 0);
+
+    // ── Arms ───────────────────────────────────────────────────────
+    mk(new THREE.CapsuleGeometry(0.1, 0.26, 6, 8), skin, -0.38, 1.1, 0, 0, 0,  0.15); // upper
+    mk(new THREE.CapsuleGeometry(0.1, 0.26, 6, 8), skin,  0.38, 1.1, 0, 0, 0, -0.15);
+    mk(new THREE.CapsuleGeometry(0.09, 0.23, 6, 8), skin, -0.44, 0.84, 0.03, 0.2, 0,  0.1); // lower
+    mk(new THREE.CapsuleGeometry(0.09, 0.23, 6, 8), skin,  0.44, 0.84, 0.03, 0.2, 0, -0.1);
+    // bracers
+    mk(new THREE.CylinderGeometry(0.105, 0.105, 0.14, 8), armor, -0.46, 0.8, 0.03);
+    mk(new THREE.CylinderGeometry(0.105, 0.105, 0.14, 8), armor,  0.46, 0.8, 0.03);
+    // hands (fists)
+    mk(new THREE.SphereGeometry(0.09, 8, 8), skin, -0.47, 0.63, 0.08);
+    mk(new THREE.SphereGeometry(0.09, 8, 8), skin,  0.47, 0.63, 0.08);
+
+    // ── Neck ───────────────────────────────────────────────────────
+    mk(new THREE.CylinderGeometry(0.1, 0.12, 0.14, 8), skin, 0, 1.52, 0);
+
+    // ── Head ───────────────────────────────────────────────────────
+    mk(new THREE.SphereGeometry(0.27, 16, 12), skin, 0, 1.84, 0);
+    // jaw boxy base
+    mk(new THREE.BoxGeometry(0.33, 0.13, 0.25), skin, 0, 1.66, 0);
+    // cheek highlights
+    mk(new THREE.SphereGeometry(0.07, 6, 6), new THREE.MeshStandardMaterial({ color: 0xFFB8A0, roughness: 0.9 }), -0.18, 1.78, 0.2);
+    mk(new THREE.SphereGeometry(0.07, 6, 6), new THREE.MeshStandardMaterial({ color: 0xFFB8A0, roughness: 0.9 }),  0.18, 1.78, 0.2);
+
+    // EYES — whites
+    mk(new THREE.SphereGeometry(0.075, 10, 8), eyeW, -0.1,  1.86, 0.22);
+    mk(new THREE.SphereGeometry(0.075, 10, 8), eyeW,  0.1,  1.86, 0.22);
+    // pupils
+    mk(new THREE.SphereGeometry(0.044, 8, 8), eyeP, -0.1,  1.86, 0.282);
+    mk(new THREE.SphereGeometry(0.044, 8, 8), eyeP,  0.1,  1.86, 0.282);
+    // eye shine (specular dot)
+    mk(new THREE.SphereGeometry(0.02, 6, 6),  eyeS, -0.088, 1.874, 0.298);
+    mk(new THREE.SphereGeometry(0.02, 6, 6),  eyeS,  0.112, 1.874, 0.298);
+    // eyebrows
+    mk(new THREE.BoxGeometry(0.1, 0.03, 0.04), hair, -0.1, 1.96, 0.22, 0, 0,  0.08);
+    mk(new THREE.BoxGeometry(0.1, 0.03, 0.04), hair,  0.1, 1.96, 0.22, 0, 0, -0.08);
+    // nose
+    mk(new THREE.SphereGeometry(0.038, 6, 6), skin, 0, 1.77, 0.265);
+    // mouth
+    mk(new THREE.BoxGeometry(0.1, 0.028, 0.02), mouthM, 0, 1.695, 0.258);
+    // ears
+    mk(new THREE.SphereGeometry(0.068, 7, 6), skin, -0.27, 1.83, 0.02);
+    mk(new THREE.SphereGeometry(0.068, 7, 6), skin,  0.27, 1.83, 0.02);
+
+    // ── Hair ───────────────────────────────────────────────────────
+    // hair cap (upper hemisphere)
+    mk(new THREE.SphereGeometry(0.285, 12, 8, 0, Math.PI*2, 0, Math.PI*0.52), hair, 0, 1.84, -0.05);
+    // back hair bulk
+    mk(new THREE.SphereGeometry(0.22, 8, 6), hair, 0, 1.75, -0.22);
+    // hair spikes
+    const spk = new THREE.ConeGeometry(0.072, 0.22, 5);
+    mk(spk, hair,     0,    2.19, -0.02, -0.08, 0,     0);
+    mk(spk, hair,  -0.14,  2.12, -0.03, -0.12, 0,  0.28);
+    mk(spk, hair,   0.14,  2.12, -0.03, -0.12, 0, -0.28);
+    mk(spk, hair,     0,   2.06, -0.13,  0.18, 0,     0);
+    // small side tufts
+    mk(new THREE.ConeGeometry(0.048, 0.14, 5), hair, -0.24, 2.05, 0, -0.1, 0,  0.55);
+    mk(new THREE.ConeGeometry(0.048, 0.14, 5), hair,  0.24, 2.05, 0, -0.1, 0, -0.55);
+
+    // ── Cape ───────────────────────────────────────────────────────
+    const capeShape = new THREE.Shape();
+    capeShape.moveTo(-0.3,  0);
+    capeShape.lineTo( 0.3,  0);
+    capeShape.lineTo( 0.26, -0.85);
+    capeShape.quadraticCurveTo(0, -0.95, -0.26, -0.85);
+    capeShape.closePath();
+    const capeMesh = new THREE.Mesh(new THREE.ShapeGeometry(capeShape), cape);
+    capeMesh.position.set(0, 1.34, -0.16);
+    capeMesh.castShadow = true;
+    g.add(capeMesh);
+    // cape collar bar
+    mk(new THREE.BoxGeometry(0.56, 0.1, 0.06), collar, 0, 1.37, -0.13);
+
+    // ── Calm Aura glow ─────────────────────────────────────────────
+    const aura = new THREE.PointLight(0x4ADE80, 0.55, 3.2);
+    aura.position.set(0, 1.2, 0);
+    g.add(aura);
+
+    // Rotate 180° so the back faces the camera (face points toward -Z = forward direction)
+    g.rotation.y = Math.PI;
+
+    return g;
+  } // end _buildFallbackMesh
+  startBreathing(scene) {
+    if (this.isBreathing) return;
+    this.isBreathing  = true;
+    this.breathTimer  = 0;
+    this.breathCycles = 0;
+    this._breathPhase = 'in'; // track phase for sound triggers
+    this.breathRing = new THREE.Mesh(
+      new THREE.TorusGeometry(2, 0.14, 16, 64),
+      new THREE.MeshStandardMaterial({
+        color: 0x2DD4BF, emissive: new THREE.Color(0x2DD4BF),
+        emissiveIntensity: 0.9, transparent: true, opacity: 0.75,
+      })
+    );
+    this.breathRing.rotation.x = Math.PI / 2;
+    this.breathRing.position.copy(this.mesh.position);
+    this.breathRing.position.y = 0.15;
+    scene.add(this.breathRing);
+    this._breathHint.style.display = 'block';
+    this._breathHint.textContent   = '🌬️ Breathe IN… (1/2) — Hold SPACE';
+    showToast('✨ Hold SPACE to calm your breathing…');
+    musicSystem.playBreathIn(); // play first inhale immediately
+  }
+  // Call once at game start — places player at the top of the portal and lets them fall down
+  spawnDrop(height = 7) {
+    this.mesh.position.y = height;
+    this._dropVY = 0;
+    this._dropping = true;
+  }
+  cancelBreathing() {
+    if (!this.isBreathing) return;
+    this.isBreathing = false;
+    this._removeRing();
+    this._breathHint.style.display = 'none';
+    showToast('🌬️ Keep going! Hold SPACE for 2 full breaths.');
+  }
+  _removeRing() {
+    if (this.breathRing) {
+      if (this.breathRing.parent) this.breathRing.parent.remove(this.breathRing);
+      this.breathRing.geometry.dispose();
+      this.breathRing.material.dispose();
+      this.breathRing = null;
+    }
+  }
+  _finishBreathing(gm) {
+    this.isBreathing = false;
+    this._removeRing();
+    this._breathHint.style.display = 'none';
+    gm.setState('GREEN');
+    showToast('💚 Amazing! You breathed through it. You are calm and ready!');
+  }
+  update(delta, keys, gm, scene, world) {
+    if (this.isBreathing) { this._updateBreathing(delta, gm, scene); return; }
+    const spd = SPEEDS[gm.state] || SPEEDS.GREEN;
+
+    // Character-relative tank controls — camera is purely for viewing, not direction
+    if (keys['KeyA'] || keys['ArrowLeft'])  this.mesh.rotation.y += TURN_SPEED * delta;
+    if (keys['KeyD'] || keys['ArrowRight']) this.mesh.rotation.y -= TURN_SPEED * delta;
+    const fwd = new THREE.Vector3(-Math.sin(this.mesh.rotation.y), 0, -Math.cos(this.mesh.rotation.y));
+    const _px = this.mesh.position.x, _pz = this.mesh.position.z;
+    if (keys['KeyW'] || keys['ArrowUp'])   this.mesh.position.addScaledVector(fwd,  spd * delta);
+    if (keys['KeyS'] || keys['ArrowDown']) this.mesh.position.addScaledVector(fwd, -spd * 0.55 * delta);
+    // Footstep: trigger sound every ~0.8 units of movement
+    if (world) {
+      this._stepDist += Math.hypot(this.mesh.position.x - _px, this.mesh.position.z - _pz);
+      if (this._stepDist >= 0.8) { this._stepDist = 0; musicSystem.playFootstep(world._lastBiome); }
+    }
+
+    if (gm.state === 'RED') {
+      this.mesh.position.x += (Math.random() - 0.5) * 0.06;
+      this.mesh.position.z += (Math.random() - 0.5) * 0.06;
+    }
+    // Gravity — player falls from portal height at spawn, otherwise stays on ground
+    const groundY = world ? world.groundHeightAt(this.mesh.position.x, this.mesh.position.z) : 0;
+    if (this._dropping) {
+      this._dropVY -= 18 * delta;   // gravity acceleration
+      this.mesh.position.y += this._dropVY * delta;
+      if (this.mesh.position.y <= groundY) {
+        this.mesh.position.y = groundY;
+        this._dropVY = 0;
+        this._dropping = false;
+      }
+    } else {
+      this.mesh.position.y = groundY;
+    }
+    this.mesh.position.x = Math.max(-72, Math.min(72, this.mesh.position.x));
+    this.mesh.position.z = Math.max(-72, Math.min(30, this.mesh.position.z));
+
+    // Push player out of solid objects (trees, feeling elements)
+    if (world) world.pushOut(this.mesh.position);
+  }
+  _updateBreathing(delta, gm, scene) {
+    this.breathTimer += delta;
+    const intCycles = Math.floor(this.breathTimer / BREATH_CYCLE_SEC);
+    if (intCycles > this.breathCycles) {
+      this.breathCycles = intCycles;
+      if (this.breathCycles >= BREATH_CYCLES_NEEDED) { this._finishBreathing(gm); return; }
+      if (gm.state === 'RED') gm.setState('YELLOW');
+      showToast('💛 Good breath! One more cycle for full calm…');
+    }
+    const t     = (this.breathTimer % BREATH_CYCLE_SEC) / BREATH_CYCLE_SEC;
+    const phase = t < 0.5 ? t * 2 : (1 - t) * 2;
+    // Trigger breath sounds on inhale/exhale phase transitions
+    const nowPhase = t < 0.5 ? 'in' : 'out';
+    if (nowPhase !== this._breathPhase) {
+      this._breathPhase = nowPhase;
+      if (nowPhase === 'in') musicSystem.playBreathIn();
+      else                   musicSystem.playBreathOut();
+    }
+    const scale = 0.4 + phase * 2.0;
+    if (this.breathRing) {
+      this.breathRing.scale.set(scale, scale, 1);
+      this.breathRing.position.copy(this.mesh.position);
+      this.breathRing.position.y = 0.15;
+      this.breathRing.rotation.z += delta * 0.35;
+      this.breathRing.material.opacity = 0.4 + phase * 0.45;
+    }
+    this._breathHint.textContent = '🌬️ ' + (t < 0.5 ? 'Breathe IN…' : 'Breathe OUT…') +
+      ' (' + (this.breathCycles + 1) + '/' + BREATH_CYCLES_NEEDED + ') — Hold SPACE';
+  }
+}
+
+/* ================================================================
+   DIALOGUE SYSTEM
+================================================================ */
+const DIALOGUES = {
+  'anger-1': {
+    portrait: '🌋', name: 'Lava Rock',
+    text: '"Someone knocked over my tower and I want to SMASH everything! I am SO ANGRY!"',
+    choices: [
+      { label: 'Push them and yell "I HATE YOU!" really loud.', correct: false,
+        wrong: "Pushing and yelling usually makes things worse. Let's try expressing it with words." },
+      { label: 'Stomp away and ignore everyone forever.', correct: false,
+        wrong: "Ignoring our feelings doesn't help them go away. There's a better way." },
+      { label: '"I feel angry when you knock over my tower without asking."', correct: true,
+        right: '🌟 An I-Statement! Sharing how YOU feel helps others understand. The Lava Rock feels cooler!' },
+    ],
+  },
+  'anger-2': {
+    portrait: '🔥', name: 'Steam Cloud',
+    text: '"We lost the game and it\'s NOT FAIR! I worked so hard and now I feel like giving up FOREVER."',
+    choices: [
+      { label: 'Quit the game and never play again!', correct: false,
+        wrong: "Quitting when things are tough keeps us from getting better." },
+      { label: 'Blame everyone on the team.', correct: false,
+        wrong: "Blaming others usually hurts friendships." },
+      { label: '"I feel frustrated when we lose, but I can try again!"', correct: true,
+        right: '🌟 Naming your feelings and choosing to try again is so brave!' },
+    ],
+  },
+  'anxiety-1': {
+    portrait: '👻', name: 'What-If Shadow',
+    text: '"What if I try and FAIL? What if everyone LAUGHS? I\'m too scared to even start!"',
+    choices: [
+      { label: 'Never try anything new — just to be safe.', correct: false,
+        wrong: "Staying 'safe' can keep us from growing. Mistakes are how we learn!" },
+      { label: "Hide and pretend you're sick so you don't have to go.", correct: false,
+        wrong: "Hiding from fears can make them feel even bigger." },
+      { label: '"Mistakes help me learn. I am safe to try."', correct: true,
+        right: '🌟 A Truth Lantern thought! Brave try! The Shadow gets smaller.' },
+    ],
+  },
+  'anxiety-2': {
+    portrait: '🌫️', name: 'Worry Fog',
+    text: '"What if nobody likes me at the new school? What if I have no friends — EVER?"',
+    choices: [
+      { label: 'Decide everyone will hate you before you even arrive.', correct: false,
+        wrong: "Our brain sometimes imagines the worst. The future hasn't happened yet!" },
+      { label: 'Stay home and never go.', correct: false,
+        wrong: "Running from worries makes them grow." },
+      { label: '"I can be a good friend. I\'ll try talking to one person."', correct: true,
+        right: '🌟 One small step clears the fog. The Worry Fog is lifting!' },
+    ],
+  },
+  'sadness-1': {
+    portrait: '😢', name: 'Blue Cloud',
+    text: '"Nobody ever wants to play with me. I am always alone… Maybe I don\'t matter."',
+    choices: [
+      { label: 'You probably deserve to be alone.', correct: false,
+        wrong: "Every single person matters — especially when they are hurting." },
+      { label: 'Just stop feeling sad.', correct: false,
+        wrong: "We can't just turn off feelings. But we CAN help someone feel less alone." },
+      { label: '"I see you and you matter. Would you like to play?"', correct: true,
+        right: '🌟 The Kindness Compass! Seeing others changes everything. The Blue Cloud brightens!' },
+    ],
+  },
+  'sadness-2': {
+    portrait: '🌧️', name: 'Drooping Flower',
+    text: '"Everything feels too hard today. I can\'t do anything right. I give up."',
+    choices: [
+      { label: 'You should just give up then.', correct: false,
+        wrong: "Even on our hardest days, giving up isn't the answer." },
+      { label: '"Just smile! Be happy!"', correct: false,
+        wrong: "Telling someone to 'just cheer up' can feel dismissive." },
+      { label: '"You\'re doing your best and that\'s enough. I\'m proud of you."', correct: true,
+        right: '🌟 Seeing someone\'s effort is the most powerful kindness. The Flower blooms!' },
+    ],
+  },
+};
+
+class DialogueSystem {
+  constructor() {
+    this.active    = false;
+    this._cb       = null;
+    this._dlgId    = null;
+    this._answered = false;
+    this._overlay  = document.getElementById('dialogue-overlay');
+    this._portrait = document.getElementById('dialogue-portrait');
+    this._name     = document.getElementById('dialogue-name');
+    this._text     = document.getElementById('dialogue-text');
+    this._choices  = document.getElementById('dialogue-choices');
+    this._feedback = document.getElementById('dialogue-feedback');
+    this._contBtn  = document.getElementById('dialogue-continue');
+    this._contBtn.addEventListener('click', () => this._handleContinue());
+  }
+  open(dialogueId, onComplete) {
+    const dlg = DIALOGUES[dialogueId];
+    if (!dlg) return;
+    this._dlgId    = dialogueId;
+    this._cb       = onComplete;
+    this._answered = false;
+    this.active    = true;
+    this._portrait.textContent       = dlg.portrait;
+    this._name.textContent           = dlg.name;
+    this._text.textContent           = dlg.text;
+    this._feedback.style.display     = 'none';
+    this._feedback.className         = '';
+    this._contBtn.style.display      = 'none';
+    this._choices.innerHTML = '';
+    // Shuffle choices so the correct answer isn't always in the same position
+    const shuffled = dlg.choices
+      .map((ch, origIdx) => ({ ch, origIdx }))
+      .sort(() => Math.random() - 0.5);
+    shuffled.forEach(({ ch, origIdx }) => {
+      const btn = document.createElement('button');
+      btn.className   = 'dlg-choice';
+      btn.textContent = ch.label;
+      btn.addEventListener('click', () => this._handleChoice(origIdx));
+      this._choices.appendChild(btn);
+    });
+    this._overlay.style.display = 'flex';
+  }
+  _handleChoice(idx) {
+    if (this._answered) return;
+    this._answered = true;
+    const dlg  = DIALOGUES[this._dlgId];
+    const ch   = dlg.choices[idx];
+    const btns = this._choices.querySelectorAll('.dlg-choice');
+    btns.forEach((b, i) => {
+      b.disabled = true;
+      if (i === idx)                      b.classList.add(ch.correct ? 'correct' : 'wrong');
+      if (!ch.correct && dlg.choices[i].correct) b.classList.add('correct');
+    });
+    this._feedback.style.display = 'block';
+    if (ch.correct) {
+      this._feedback.textContent  = ch.right;
+      this._feedback.className    = '';
+      this._contBtn.textContent   = 'Great! ✨ Continue';
+      this._contBtn.style.display = 'inline-block';
+    } else {
+      this._feedback.textContent = ch.wrong;
+      this._feedback.className   = 'wrong-feedback';
+      setTimeout(() => this._allowRetry(), 2200);
+    }
+  }
+  _allowRetry() {
+    if (!this.active) return;
+    this._answered = false;
+    this._choices.querySelectorAll('.dlg-choice').forEach(b => {
+      b.disabled = false; b.className = 'dlg-choice';
+    });
+    this._feedback.style.display = 'none';
+  }
+  _handleContinue() { this.close(true); }
+  close(success = false) {
+    this.active = false;
+    this._overlay.style.display = 'none';
+    const cb = this._cb; this._cb = null;
+    if (cb) cb(success);
+  }
+}
+
+/* ================================================================
+   SOCIAL STORY — opening slideshow + post-quest reflection
+================================================================ */
+const STORY_PAGES = [
+  { icon: '🌤️',
+    text: '<strong>Welcome, Guardian!</strong><br><br>Deep in a magical world, feelings are like weather. On bright days everything feels <em>easy and calm</em>.' },
+  { icon: '🌥️',
+    text: 'Some days <strong>clouds come</strong>. Sometimes we feel <em>nervous</em> — like a misty morning that makes it hard to see. That\'s okay.' },
+  { icon: '⛈️',
+    text: 'Some days it <strong>storms inside</strong> — like a volcano rumbling with anger, or rain that feels heavy and sad. Those feelings are okay too.' },
+  { icon: '🛡️',
+    text: 'You are the <strong>Guardian of Calm</strong>. Your job isn\'t to make the storms disappear — it\'s to <em>breathe through them</em> and help others find their calm.' },
+  { icon: '🗺️',
+    text: '<strong>Your tools:</strong><br>💎 Collect <em>Calm Crystals</em> by helping creatures<br>🌬️ Hold <kbd>SPACE</kbd> to breathe when overwhelmed<br>💬 Use kind, brave words<br>👁️ Shine your <em>Truth Lantern</em> on scary thoughts' },
+  { icon: '🌋🌫️💙',
+    text: 'Three islands need your Guardian help!<br><br><strong>🌋 Volcanic Valley</strong> — where anger burns<br><strong>🌫️ Misty Marsh</strong> — where worry fogs the path<br><strong>💙 Blue Valley</strong> — where sadness slows every step<br><br><em>Press Next or SPACE to begin your quest!</em>' },
+];
+
+const TRUTH_STATEMENTS = [
+  '"Mistakes help me learn. I am safe to try."',
+  '"I can take a deep breath when I feel angry."',
+  '"I can ask for help when things feel hard."',
+  '"My feelings are not wrong — I just need to handle them well."',
+  '"I can be brave even when I\'m scared."',
+  '"Being kind to others makes me feel better too."',
+];
+
+class SocialStory {
+  constructor(onComplete) {
+    this._onComplete = onComplete;
+    this._page       = 0;
+    this._overlay    = document.getElementById('social-story-overlay');
+    this._iconEl     = document.getElementById('story-icon');
+    this._textEl     = document.getElementById('story-text');
+    this._dotsEl     = document.getElementById('story-dots');
+    this._nextBtn    = document.getElementById('story-next-btn');
+    this._nextBtn.addEventListener('click', () => this._advance());
+    this._keyHandler = (e) => {
+      if (e.code === 'Space' || e.code === 'Enter') { e.preventDefault(); this._advance(); }
+    };
+  }
+  start() {
+    this._overlay.style.display = 'flex';
+    document.addEventListener('keydown', this._keyHandler);
+    this._show(0);
+  }
+  _show(idx) {
+    const p = STORY_PAGES[idx];
+    this._iconEl.textContent  = p.icon;
+    this._textEl.innerHTML    = p.text;
+    this._nextBtn.textContent = idx === STORY_PAGES.length - 1 ? 'Begin Quest! ⚔️' : 'Next →';
+    this._dotsEl.innerHTML    = STORY_PAGES
+      .map((_, i) => '<span class="story-dot' +
+        (i === idx ? ' active' : i < idx ? ' done' : '') + '"></span>')
+      .join('');
+  }
+  _advance() {
+    this._page++;
+    if (this._page >= STORY_PAGES.length) {
+      this._overlay.style.display = 'none';
+      document.removeEventListener('keydown', this._keyHandler);
+      this._onComplete();
+    } else {
+      this._show(this._page);
+    }
+  }
+}
+
+function showReflection(crystalCount) {
+  musicSystem.playVictory();
+  const overlay  = document.getElementById('reflection-overlay');
+  const intro    = document.getElementById('reflection-intro');
+  const choices  = document.getElementById('reflection-choices');
+  const chosen   = document.getElementById('reflection-chosen');
+  const stmt     = document.getElementById('reflection-statement');
+  const closeBtn = document.getElementById('reflection-close');
+  intro.textContent     = 'You collected ' + crystalCount + ' Calm Crystal' +
+    (crystalCount !== 1 ? 's' : '') + ' and restored peace to all three islands! 🌟';
+  choices.innerHTML     = '';
+  choices.style.display = '';
+  chosen.style.display  = 'none';
+  TRUTH_STATEMENTS.forEach(s => {
+    const btn = document.createElement('button');
+    btn.className   = 'ref-choice-btn';
+    btn.textContent = s;
+    btn.addEventListener('click', () => {
+      stmt.textContent      = s;
+      chosen.style.display  = 'flex';
+      choices.style.display = 'none';
+    });
+    choices.appendChild(btn);
+  });
+  closeBtn.addEventListener('click', () => {
+    overlay.style.display = 'none';
+    _showEndScreen();
+  }, { once: true });
+  overlay.style.display = 'flex';
+}
+
+function _showEndScreen() {
+  const overlay = document.getElementById('social-story-overlay');
+  document.getElementById('story-icon').textContent = '🌟';
+  document.getElementById('story-text').innerHTML =
+    '<strong>Quest Complete, Guardian!</strong><br><br>' +
+    'You showed the world that <em>feelings can be understood</em>, ' +
+    'that brave words have power, and that one deep breath can change everything.<br><br>' +
+    '<span style="color:#FFD700;font-size:0.88rem">Made with ❤️ for Valerie\'s students</span>';
+  document.getElementById('story-dots').innerHTML = '';
+  const btn = document.getElementById('story-next-btn');
+  btn.textContent = '🔄 Play Again';
+  btn.onclick = () => location.reload();
+  overlay.style.display = 'flex';
+}
+
+/* ================================================================
+   WORLD — biomes, feeling elements, crystals, lava zones
+================================================================ */
+const GC = {
+  base: 0x3A5C2A, volcano: 0x4A1A0A, lavaPit: 0xFF4400,
+  marsh: 0x2A4040, valley: 0x1A2350, rock: 0x8B7355,
+  crystalOn: 0x67E8F9, crystalOff: 0x334455,
+};
+const FEELING_DATA = [
+  { id: 'anger-1',   pos: [-30, 0,  8], color: 0xEF4444, crystalIdx: 0, glb: 'assets/anger.glb',
+    followUp: '🌋 "I used an I-Statement and my friend finally understood how I felt. It worked!"\n— Lava Rock 💛' },
+  { id: 'anger-2',   pos: [-46, 0, -5], color: 0xFF6B35, crystalIdx: 1, glb: 'assets/anger.glb',
+    followUp: '🔥 "We played again the next day. Naming my feelings helped me stay calm when we lost."\n— Steam Cloud 💛' },
+  { id: 'anxiety-1', pos: [ 26, 0,  6], color: 0x8B5CF6, crystalIdx: 2, glb: 'assets/WhatIfShadow.glb',
+    followUp: '👻 "I tried the new thing. I made a mistake and the world didn\'t end — I actually learned!"\n— What-If Shadow 💛' },
+  { id: 'anxiety-2', pos: [ 44, 0, -7], color: 0x6366F1, crystalIdx: 3, glb: 'assets/WhatIfShadow.glb',
+    followUp: '🌫️ "I talked to one person at school. Just one. And now we eat lunch together."\n— Worry Fog 💛' },
+  { id: 'sadness-1', pos: [  6, 0,-30], color: 0x3B82F6, crystalIdx: 4, glb: 'assets/sadness.glb',
+    followUp: '😢 "You said I mattered. I still think about that every day. Thank you, Guardian."\n— Blue Cloud 💛' },
+  { id: 'sadness-2', pos: [ -8, 0,-46], color: 0x60A5FA, crystalIdx: 5, glb: 'assets/sadness.glb',
+    followUp: '🌧️ "Someone saw my effort today and said they were proud of me. I bloomed again."\n— Drooping Flower 💛' },
+];
+// Per-biome crystal definitions — GLB + locked/unlocked colours
+const CRYSTAL_DATA = [
+  // Anger (Volcanic Valley)  — crystalIdx 0, 1
+  { pos:[-26,1,14], glb:'assets/AngerCrystal.glb',   colorOff:0x4A1A0A, colorOn:0xFF4411 },
+  { pos:[-44,1, 2], glb:'assets/AngerCrystal.glb',   colorOff:0x4A1A0A, colorOn:0xFF4411 },
+  // Worry (Misty Marsh)      — crystalIdx 2, 3
+  { pos:[ 30,1,12], glb:'assets/WorryCrystal.glb',   colorOff:0x1E0A33, colorOn:0xAA55FF },
+  { pos:[ 46,1,-2], glb:'assets/WorryCrystal.glb',   colorOff:0x1E0A33, colorOn:0xAA55FF },
+  // Sadness (Blue Valley)    — crystalIdx 4, 5
+  { pos:[  2,1,-26], glb:'assets/SadnessCrystal.glb', colorOff:0x051020, colorOn:0x33AAFF },
+  { pos:[-12,1,-44], glb:'assets/SadnessCrystal.glb', colorOff:0x051020, colorOn:0x33AAFF },
+];
+const LAVA_ZONES = [
+  [-22,-14,-6,4], [-38,-28,-4,8], [-54,-44,4,14],
+];
+
+// Roaming feeling-enemies — one per biome
+const WISP_DEFS = [
+  {
+    id:      'anger-wisp',
+    glb:     'assets/AngerWisp.glb',
+    color:   0xFF4422,
+    glowCol: 0xFF3300,
+    bounds:  { xMin:-54, xMax:-12, zMin:-18, zMax:18 },
+    height:  1.6,
+    messages: [
+      '🔥 A wave of ANGER crashed over you! Hold SPACE to breathe it out.',
+      '😤 The Anger Wisp touched you. Your chest feels hot. Breathe slowly.',
+      '🌋 Rage flared inside you. Three deep breaths will help it pass.',
+      '😠 The angry feeling stung you. Name it, breathe, let it go.',
+    ],
+  },
+  {
+    id:      'worry-wisp',
+    glb:     'assets/WorryWisp.glb',
+    color:   0xAA55FF,
+    glowCol: 0x7C3AED,
+    bounds:  { xMin:14, xMax:56, zMin:-18, zMax:18 },
+    height:  1.8,
+    messages: [
+      '👻 A Worry Wisp grabbed you! Hold SPACE to breathe through the fear.',
+      '😰 The what-if thoughts are swirling. Breathe — you are safe right now.',
+      '🌫️ Anxiety brushed past you. One small step at a time. You\'ve got this.',
+      '😨 The worry stings. Remember: most fears never become real. Breathe.',
+    ],
+  },
+  {
+    id:      'sadness-wisp',
+    glb:     'assets/SadnessWisp.glb',
+    color:   0x38BDF8,
+    glowCol: 0x0EA5E9,
+    bounds:  { xMin:-20, xMax:20, zMin:-54, zMax:-14 },
+    height:  1.6,
+    messages: [
+      '💧 Sadness washed over you. It\'s okay to feel this. Hold SPACE to breathe.',
+      '😢 The Sadness Wisp dimmed your light. You are not alone. Breathe gently.',
+      '🌧️ A heavy feeling settled on you. Breathe — the sun is still there.',
+      '💙 Sadness touched you. Feelings pass like clouds. Hold SPACE to breathe.',
+    ],
+  },
+];
+
+class World {
+  constructor(scene, gm, dlg, onQuestComplete) {
+    this.scene           = scene;
+    this.gm              = gm;
+    this.dlg             = dlg;
+    this.onQuestComplete = onQuestComplete;
+    this.crystalCount    = 0;
+    this.crystalTotal    = CRYSTAL_DATA.length;
+    this.feelingElements = [];
+    this.crystals = [];
+    this._lastBiome = 'center';
+    this._biomeGracePeriod = 8.0; // seconds after spawn before biome affects state
+    this._tutorialShown = new Set();
+    this._colliders = []; // {x, z, r} circles — player is pushed out of these
+    this.magicalStones = []; // one per biome — ancient wisdom stones
+    this._wisdomActive = false;
+    this.wisps = [];        // roaming feeling-enemies
+    this._playerHitCooldown = 0; // seconds until player can be hit again
+    this._pedestalTopY = 0.4; // top surface height of the starting pedestal (cylinder fallback)
+    this._build();
+    this._updateCrystalUI();
+  }
+  _build() {
+    const s = this.scene;
+    this._ground(s,   0,   0, 130, 130, GC.base,    0.00, false, 'assets/textures/ground_calm.jpg');
+    // Organic island shapes — capped at r*0.88 so they never touch each other or the calm centre
+    this._islandGround(s, -32,  0, 24, GC.volcano, 0.02, 'assets/textures/ground_anger.jpg',
+      [0.85,0.72,0.88,0.75,0.82,0.68,0.85,0.78,0.88,0.70,0.84,0.76,0.82,0.72,0.86,0.78]);
+    this._islandGround(s,  35,  0, 22, GC.marsh,   0.02, 'assets/textures/ground_worry.jpg',
+      [0.80,0.88,0.75,0.85,0.82,0.88,0.78,0.85,0.80,0.88,0.75,0.82,0.86,0.78,0.84,0.88],
+      'assets/WorryGround.glb');
+    this._islandGround(s,   0,-35, 22, GC.valley,  0.02, 'assets/textures/ground_sadness.jpg',
+      [0.82,0.78,0.85,0.80,0.75,0.82,0.88,0.78,0.84,0.80,0.78,0.85,0.80,0.75,0.82,0.86],
+      'assets/SadnessGround.glb');
+    this._addLavaZonesGround(s);
+    // Pre-register feeling element positions so procedural placements (trees, stones) avoid them.
+    // Crystals are intentionally NOT registered — the hero must be able to walk into them.
+    FEELING_DATA.forEach(nd => this._colliders.push({ x: nd.pos[0], z: nd.pos[2], r: 2.5 }));
+    this._addTrees(s);
+    this._addMagicalStones(s);
+    this._buildWisps(s);
+    // Narrow paths from center to each island — textured
+    this._ground(s,-16,  0,12, 6,0x6B4D2A,0.015, false, 'assets/textures/ground_calm.jpg');
+    this._ground(s, 18,  0,12, 6,0x5A6040,0.015, false, 'assets/textures/ground_calm.jpg');
+    this._ground(s,  0,-16, 6,12,0x2A3A60,0.015, false, 'assets/textures/ground_calm.jpg');
+    const stone = new THREE.Mesh(
+      new THREE.CylinderGeometry(3,3.5,0.4,16),
+      new THREE.MeshStandardMaterial({ color:0x9A8A7A, roughness:0.9 })
+    );
+    stone.position.set(0,0.2,0); stone.receiveShadow = true; s.add(stone);
+    FEELING_DATA.forEach((nd,i)             => this._createFeelingElement(nd,i));
+    CRYSTAL_DATA.forEach((cd, i)        => this._createCrystal(cd, i));
+    const ll = new THREE.PointLight(0xFF5500,1.0,40); ll.position.set(-30,3,0); s.add(ll);
+    const ml = new THREE.PointLight(0x4488AA,0.7,50); ml.position.set(35,4,0);  s.add(ml);
+    const vl = new THREE.PointLight(0x4466CC,0.8,50); vl.position.set(0,4,-35); s.add(vl);
+
+    // ── Misty Marsh fog particles ─────────────────────────────────
+    this._mistClouds = [];
+    this._buildMist(s);
+
+    // ── Therapy dog ─────────────────────────────────────────────
+    this._buildDog(s);
+
+    // ── Starting pedestal — try GLB, fall back to cylinder ────────────────
+    const _addPedestal = () => {
+      const m = new THREE.Mesh(
+        new THREE.CylinderGeometry(3,3.5,0.4,16),
+        new THREE.MeshStandardMaterial({ color:0x9A8A7A, roughness:0.9 })
+      );
+      m.position.set(0,0.2,0); m.receiveShadow = true; s.add(m);
+      this._pedestalTopY = 0.4; // cylinder: center 0.2 + half-height 0.2
+    };
+    if (window.location.protocol !== 'file:') {
+      new GLTFLoader().load('assets/pedestal.glb', (gltf) => {
+        const model = gltf.scene;
+        const box = new THREE.Box3().setFromObject(model);
+        const maxSide = Math.max(box.max.x - box.min.x, box.max.z - box.min.z, 0.1);
+        model.scale.setScalar(6 / maxSide);         // fit to ~6 units across
+        box.setFromObject(model);
+        model.position.y -= box.min.y;              // sit on ground
+        model.traverse(c => { if (c.isMesh) { c.castShadow = true; c.receiveShadow = true; } });
+        s.add(model);
+        // Record the actual top of the GLB pedestal for ground-height queries
+        const box2 = new THREE.Box3().setFromObject(model);
+        this._pedestalTopY = box2.max.y;
+      }, undefined, _addPedestal);
+    } else { _addPedestal(); }
+    this._buildTerrain(s);
+    this._buildParticles(s);
+  }
+  // ── Surrounding mountain ring ──────────────────────────────────────────────
+  // Places a ring of varied peaks just outside the playable area so the world
+  // doesn't look flat or boundless.  All peaks are purely decorative; the player
+  // can never reach them (they are beyond the movement clamp of ±72).
+  _buildTerrain(scene) {
+    const rng = (a, b) => a + Math.random() * (b - a);
+
+    // Per-angle colours: blend between biome palettes as we go around the ring
+    const peakColor = (angle) => {
+      // angle in radians; map to biome quadrants
+      // West  (π)       → Anger/Volcano  : dark red-brown
+      // East  (0)       → Worry/Marsh    : muted purple-grey
+      // South (-π/2)    → Sadness/Valley : deep blue-grey
+      // North (+π/2)    → Calm           : dark forest green
+      const a = ((angle % (Math.PI * 2)) + Math.PI * 2) % (Math.PI * 2); // 0–2π
+      const segments = [
+        { start: 0,            end: Math.PI * 0.5,  col: [0x3A4A2A, 0x2E3D1E] },  // NE calm→anger
+        { start: Math.PI*0.5,  end: Math.PI,        col: [0x2E1A0A, 0x4A1A08] },  // NW anger
+        { start: Math.PI,      end: Math.PI * 1.5,  col: [0x1A1A2E, 0x2A2040] },  // SW sadness
+        { start: Math.PI*1.5,  end: Math.PI * 2,    col: [0x2A3040, 0x1E2A3A] },  // SE worry
+      ];
+      for (const seg of segments) {
+        if (a >= seg.start && a < seg.end) {
+          return seg.col[Math.floor(Math.random() * seg.col.length)];
+        }
+      }
+      return 0x2A2A2A;
+    };
+
+    const INNER_R = 62;   // inner ring radius
+    const OUTER_R = 78;   // outer ring radius
+    const PEAKS   = 42;   // total peaks around the ring
+
+    for (let i = 0; i < PEAKS; i++) {
+      const angle  = (i / PEAKS) * Math.PI * 2 + rng(-0.08, 0.08);
+      const dist   = rng(INNER_R, OUTER_R);
+      const cx     = Math.cos(angle) * dist;
+      const cz     = Math.sin(angle) * dist;
+      const height = rng(6, 22);
+      const base   = rng(4, 10);
+      const color  = peakColor(angle);
+
+      // Main cone peak
+      const mat = new THREE.MeshStandardMaterial({ color, roughness: 0.92, metalness: 0.02 });
+      const cone = new THREE.Mesh(
+        new THREE.ConeGeometry(base, height, rng(5,8) | 0, 1),
+        mat
+      );
+      cone.position.set(cx, height * 0.5, cz);
+      cone.rotation.y = rng(0, Math.PI * 2);
+      cone.castShadow = false; cone.receiveShadow = true;
+      scene.add(cone);
+
+      // Rounded shoulder (half-sphere at base for a softer hill look)
+      const shoulder = new THREE.Mesh(
+        new THREE.SphereGeometry(base * 0.85, 7, 4, 0, Math.PI * 2, 0, Math.PI * 0.55),
+        mat
+      );
+      shoulder.position.set(cx, 0.1, cz);
+      shoulder.rotation.y = rng(0, Math.PI * 2);
+      scene.add(shoulder);
+
+      // Snow cap on tall peaks
+      if (height > 14) {
+        const snowMat = new THREE.MeshStandardMaterial({ color: 0xE8EEF4, roughness: 0.6 });
+        const snow = new THREE.Mesh(
+          new THREE.ConeGeometry(base * 0.35, height * 0.28, (rng(5,8) | 0)),
+          snowMat
+        );
+        snow.position.set(cx, height * 0.82, cz);
+        snow.rotation.y = rng(0, Math.PI * 2);
+        scene.add(snow);
+      }
+    }
+
+    // Secondary inner bumps — low rolling hills just inside the mountain ring
+    // to break up the flat transition between playfield and mountains
+    const BUMPS = 28;
+    for (let i = 0; i < BUMPS; i++) {
+      const angle = (i / BUMPS) * Math.PI * 2 + rng(-0.14, 0.14);
+      const dist  = rng(52, 63);
+      const cx    = Math.cos(angle) * dist;
+      const cz    = Math.sin(angle) * dist;
+      const h     = rng(2, 5);
+      const r     = rng(3.5, 7);
+      const col   = peakColor(angle);
+      const mat   = new THREE.MeshStandardMaterial({ color: col, roughness: 0.95 });
+      const hill  = new THREE.Mesh(
+        new THREE.SphereGeometry(r, 8, 5, 0, Math.PI * 2, 0, Math.PI * 0.5),
+        mat
+      );
+      hill.scale.y = h / r;
+      hill.position.set(cx, 0.05, cz);
+      scene.add(hill);
+    }
+  }
+  _buildMist(scene) {
+    // 18 individual mist puffs scattered over the Misty Marsh (x:10–62, z:-26–26)
+    for (let i = 0; i < 18; i++) {
+      const cx  = 13  + Math.random() * 48;   // x: 13 → 61
+      const cz  = -22 + Math.random() * 44;   // z: -22 → 22
+      const cnt = 180 + Math.floor(Math.random() * 140);
+      const pos = new Float32Array(cnt * 3);
+      for (let j = 0; j < cnt; j++) {
+        const r     = Math.random() * 4.5;
+        const theta = Math.random() * Math.PI * 2;
+        pos[j*3]     = cx  + Math.cos(theta) * r + (Math.random()-0.5) * 2;
+        pos[j*3+1]   = 0.4 + Math.random() * 2.8;   // float 0.4 → 3.2 units above ground
+        pos[j*3+2]   = cz  + Math.sin(theta) * r + (Math.random()-0.5) * 2;
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      const mat = new THREE.PointsMaterial({
+        color:       0xB8D8E8,
+        size:        1.8 + Math.random() * 1.4,
+        transparent: true,
+        opacity:     0.0,          // start invisible, fade in
+        depthWrite:  false,
+        sizeAttenuation: true,
+      });
+      const pts = new THREE.Points(geo, mat);
+      scene.add(pts);
+      // Each puff has its own drift velocity
+      this._mistClouds.push({
+        pts,
+        baseX: cx, baseZ: cz,
+        driftX: (Math.random()-0.5) * 0.4,
+        driftZ: (Math.random()-0.5) * 0.4,
+        phase:   Math.random() * Math.PI * 2,
+      });
+    }
+  }
+  _dogWaypoints() {
+    return [
+      [0,0,5],[5,0,-5],[-5,0,3],[3,0,0],
+      [-28,0,5],[-38,0,-3],[-45,0,8],[-32,0,-8],
+      [28,0,5],[40,0,-4],[48,0,8],[33,0,-9],
+      [3,0,-28],[-5,0,-38],[6,0,-46],[-8,0,-32],
+    ];
+  }
+  _buildDog(scene) {
+    const group = new THREE.Group();
+    const wps   = this._dogWaypoints();
+    const start = wps[Math.floor(Math.random() * wps.length)];
+    group.position.set(start[0], 0, start[2]);
+    scene.add(group);
+    this._dog = {
+      mesh:      group,
+      waypoints: wps,
+      targetIdx: Math.floor(Math.random() * wps.length),
+      speed:     1.4,
+      cooldown:  0,
+      _velX: 0, _velZ: 0,   // smoothed velocity for lerp movement
+      petting:   0,          // countdown while player is petting (dog stays, frozen)
+    };
+    const addFallback = () => {
+      const mat  = new THREE.MeshStandardMaterial({ color: 0xD4A017, roughness: 0.7 });
+      const body = new THREE.Mesh(new THREE.CapsuleGeometry(0.35, 0.6, 6, 10), mat);
+      body.rotation.z = Math.PI / 2; body.position.set(0, 0.55, 0); body.castShadow = true; group.add(body);
+      const head = new THREE.Mesh(new THREE.SphereGeometry(0.28, 8, 8), mat);
+      head.position.set(0.55, 0.85, 0); head.castShadow = true; group.add(head);
+      const tail = new THREE.Mesh(new THREE.CapsuleGeometry(0.08, 0.4, 4, 6), mat);
+      tail.rotation.z = Math.PI / 4; tail.position.set(-0.55, 0.85, 0); group.add(tail);
+    };
+    if (window.location.protocol !== 'file:') {
+      new GLTFLoader().load('assets/TherapyDog.glb', (gltf) => {
+        const model = gltf.scene;
+        const box = new THREE.Box3().setFromObject(model);
+        const h = box.max.y - box.min.y || 1;
+        model.scale.setScalar(1.4 / h);
+        box.setFromObject(model); model.position.y -= box.min.y;
+        model.rotation.y = Math.PI * 1.5; // correct backwards-facing GLB
+        model.traverse(c => {
+          if (!c.isMesh) return;
+          c.castShadow = true;
+          if (c.material) { c.material.roughness = Math.min(c.material.roughness ?? 1, 0.75); c.material.envMapIntensity = 0; c.material.needsUpdate = true; }
+        });
+        group.add(model);
+      }, undefined, addFallback);
+    } else { addFallback(); }
+  }
+  _updateDog(delta, player) {
+    const dog = this._dog;
+    if (!dog) return;
+    if (dog.cooldown > 0) {
+      dog.cooldown -= delta;
+      if (dog.cooldown <= 0) {
+        const wps = dog.waypoints;
+        let best = 0, bestDist = 0;
+        wps.forEach((wp, i) => {
+          const d = Math.hypot(wp[0] - player.mesh.position.x, wp[2] - player.mesh.position.z);
+          if (d > bestDist) { bestDist = d; best = i; }
+        });
+        dog.mesh.position.set(wps[best][0], 0, wps[best][2]);
+        dog.targetIdx = (best + 1) % wps.length;
+        dog._velX = 0; dog._velZ = 0;
+        dog.mesh.visible = true;
+        showToast('🐾 The therapy dog has returned — seek them out when you need comfort.');
+      }
+      return;
+    }
+
+    // While being petted: face player, gentle sit-still wag, count down then disappear
+    if (dog.petting > 0) {
+      const ppx = player.mesh.position.x, ppz = player.mesh.position.z;
+      dog.mesh.rotation.y = Math.atan2(-(ppx - dog.mesh.position.x), -(ppz - dog.mesh.position.z));
+      dog.mesh.position.y = this.groundHeightAt(dog.mesh.position.x, dog.mesh.position.z)
+                          + Math.abs(Math.sin(Date.now() * 0.002)) * 0.06 + 0.02;
+      dog.petting -= delta;
+      if (dog.petting <= 0) {
+        dog.mesh.visible = false;
+        dog.cooldown = 12 + Math.random() * 8;
+      }
+      return;
+    }
+
+    // Decide target: attract toward player when close, otherwise roam waypoints
+    const px = player.mesh.position.x, pz = player.mesh.position.z;
+    const playerDist = Math.hypot(px - dog.mesh.position.x, pz - dog.mesh.position.z);
+    let targetX, targetZ;
+    if (playerDist < 14) {
+      targetX = px; targetZ = pz;
+    } else {
+      const wp = dog.waypoints[dog.targetIdx];
+      targetX = wp[0]; targetZ = wp[2];
+      if (Math.hypot(targetX - dog.mesh.position.x, targetZ - dog.mesh.position.z) < 1.2)
+        dog.targetIdx = Math.floor(Math.random() * dog.waypoints.length);
+    }
+
+    // Smooth velocity lerp — dog accelerates/decelerates gently
+    const dx = targetX - dog.mesh.position.x;
+    const dz = targetZ - dog.mesh.position.z;
+    const dist = Math.sqrt(dx * dx + dz * dz) || 0.001;
+    const desiredVX = (dx / dist) * dog.speed;
+    const desiredVZ = (dz / dist) * dog.speed;
+    const lerpK = 1 - Math.pow(0.01, delta); // frame-rate independent lerp ~99% in 1s
+    dog._velX += (desiredVX - dog._velX) * lerpK;
+    dog._velZ += (desiredVZ - dog._velZ) * lerpK;
+    dog.mesh.position.x += dog._velX * delta;
+    dog.mesh.position.z += dog._velZ * delta;
+
+    // Smooth rotation to face movement direction
+    const moveLen = Math.sqrt(dog._velX * dog._velX + dog._velZ * dog._velZ);
+    if (moveLen > 0.05) {
+      const targetAngle = Math.atan2(-dog._velX, -dog._velZ);
+      let angleDiff = targetAngle - dog.mesh.rotation.y;
+      while (angleDiff >  Math.PI) angleDiff -= Math.PI * 2;
+      while (angleDiff < -Math.PI) angleDiff += Math.PI * 2;
+      dog.mesh.rotation.y += angleDiff * Math.min(1, 5 * delta);
+    }
+
+    // Gentle trotting bounce (slower) — sit on pedestal surface when in range
+    dog.mesh.position.y = this.groundHeightAt(dog.mesh.position.x, dog.mesh.position.z)
+                        + Math.abs(Math.sin(Date.now() * 0.003)) * 0.12;
+
+    // Heal on touch — start 3-second petting window on first contact
+    if (playerDist < 2.2 && dog.cooldown <= 0) {
+      const gm = this.gm;
+      if      (gm.state === 'RED')    gm.setState('YELLOW');
+      else if (gm.state === 'YELLOW') gm.setState('GREEN');
+      const msgs = [
+        '🐶 The therapy dog nuzzles you warmly. A wave of calm washes over you.',
+        '🐾 A gentle paw rests on your hand. Your breathing slows. You feel safer.',
+        '🐶 The therapy dog\'s warm presence reminds you — you are not alone.',
+        '🐾 Soft fur and kind eyes. The therapy dog helps you find your calm again.',
+        '🐶 The dog wags its tail and your heart feels a little lighter.',
+      ];
+      showToast(msgs[Math.floor(Math.random() * msgs.length)]);
+      dog.petting = 3.0; // stay for 3 seconds of petting
+      dog._velX = 0; dog._velZ = 0; // stop moving
+    }
+  }
+  // Returns the ground surface height at (x, z).
+  // On the starting pedestal the floor is raised; everywhere else it is 0.
+  groundHeightAt(x, z) {
+    return Math.hypot(x, z) < 3.2 ? this._pedestalTopY : 0;
+  }
+  // Push player position out of all registered circle colliders.
+  // The pedestal at (0,0) is intentionally excluded — player walks onto it.
+  pushOut(pos) {
+    const PLAYER_R = 0.45;
+    for (const c of this._colliders) {
+      const dx = pos.x - c.x, dz = pos.z - c.z;
+      const dist = Math.sqrt(dx * dx + dz * dz);
+      const minDist = PLAYER_R + c.r;
+      if (dist < minDist && dist > 0.001) {
+        const push = (minDist - dist) / dist;
+        pos.x += dx * push;
+        pos.z += dz * push;
+      }
+    }
+  }
+  // Loads Lava.glb for all three lava zones, cloned and scaled per zone.
+  // Falls back to texture-mapped flat rectangles if GLB is not available.
+  _addLavaZonesGround(scene) {
+    // Create fallback meshes immediately (texture loading is wired inside _ground)
+    const meshes = LAVA_ZONES.map(([x1,x2,z1,z2]) =>
+      this._ground(scene, (x1+x2)/2, (z1+z2)/2, x2-x1, z2-z1,
+        GC.lavaPit, 0.04, true, 'assets/textures/ground_lava.jpg')
+    );
+    if (window.location.protocol === 'file:') return;
+    new GLTFLoader().load('assets/Lava.glb', (gltf) => {
+      LAVA_ZONES.forEach(([x1,x2,z1,z2], i) => {
+        const clone = gltf.scene.clone(true);
+        const box = new THREE.Box3().setFromObject(clone);
+        const bw = Math.max(box.max.x - box.min.x, 0.1);
+        const bd = Math.max(box.max.z - box.min.z, 0.1);
+        const w = x2 - x1, d = z2 - z1;
+        clone.scale.set(w / bw, 1, d / bd);
+        box.setFromObject(clone);
+        clone.position.set((x1+x2)/2, 0.04 - box.min.y, (z1+z2)/2);
+        clone.traverse(c => { if (c.isMesh) { c.receiveShadow = true; c.castShadow = false; } });
+        scene.add(clone);
+        scene.remove(meshes[i]); // texture fallback no longer needed
+      });
+    }); // no error callback — fallback meshes + textures already in scene
+  }
+
+  // Builds an organic irregular island shape instead of a rectangle.
+  // radii: array of 16 multipliers (0.7–1.0) controlling the bumpiness of the outline.
+  // glbPath (optional): try loading this GLB first; fall back to texture on failure.
+  _islandGround(scene, cx, cz, r, colorHex, y, texturePath, radii, glbPath = null) {
+    const PTS = radii.length;
+    const shape = new THREE.Shape();
+    for (let i = 0; i <= PTS; i++) {
+      const angle = (i / PTS) * Math.PI * 2 - Math.PI / 2;
+      const rad   = r * radii[i % PTS];
+      const sx = Math.cos(angle) * rad, sy = Math.sin(angle) * rad;
+      if (i === 0) shape.moveTo(sx, sy); else shape.lineTo(sx, sy);
+    }
+    shape.closePath();
+    const geo = new THREE.ShapeGeometry(shape, 48);
+    geo.rotateX(-Math.PI / 2);  // XY shape → XZ ground plane
+    // Recompute UVs using world-position tiling (4 units per tile) so texture
+    // doesn't stretch and matches the base floor tiling underneath.
+    const tileSize = 4;
+    const posAttr  = geo.attributes.position;
+    const uvArr    = new Float32Array(posAttr.count * 2);
+    for (let i = 0; i < posAttr.count; i++) {
+      uvArr[i * 2]     = (cx + posAttr.getX(i)) / tileSize;
+      uvArr[i * 2 + 1] = (cz + posAttr.getZ(i)) / tileSize;
+    }
+    geo.setAttribute('uv', new THREE.BufferAttribute(uvArr, 2));
+    const mat = new THREE.MeshStandardMaterial({
+      color: colorHex, roughness: 0.85,
+      polygonOffset: true, polygonOffsetFactor: -1, polygonOffsetUnits: -1,
+    });
+    const m = new THREE.Mesh(geo, mat);
+    m.position.set(cx, y, cz);
+    m.receiveShadow = true;
+    scene.add(m);
+    // Helper to apply the texture onto the fallback mesh
+    const loadTex = () => {
+      if (!texturePath || window.location.protocol === 'file:') return;
+      new THREE.TextureLoader().load(texturePath, (tex) => {
+        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+        mat.map = tex;
+        mat.color.set(0x686868);  // mid-gray tint prevents ambient wash-out
+        mat.needsUpdate = true;
+      });
+    };
+    if (glbPath && window.location.protocol !== 'file:') {
+      // Prefer GLB; on error fall back to texture on the procedural mesh
+      new GLTFLoader().load(glbPath, (gltf) => {
+        const model = gltf.scene;
+        const box = new THREE.Box3().setFromObject(model);
+        const bw = Math.max(box.max.x - box.min.x, 0.1);
+        const bd = Math.max(box.max.z - box.min.z, 0.1);
+        model.scale.set((r * 2) / bw, 1, (r * 2) / bd);
+        box.setFromObject(model);
+        model.position.set(cx, y - box.min.y, cz);
+        model.traverse(c => { if (c.isMesh) { c.receiveShadow = true; c.castShadow = false; } });
+        scene.add(model);
+        scene.remove(m); // procedural fallback no longer needed
+      }, undefined, loadTex);
+    } else {
+      loadTex();
+    }
+    return m;
+  }
+  _ground(scene, cx, cz, w, d, color, y=0, glow=false, texturePath=null) {
+    const mat = new THREE.MeshStandardMaterial({
+      color, roughness: glow ? 0.3 : 0.85,
+      emissive: new THREE.Color(glow ? color : 0),
+      emissiveIntensity: glow ? 0.4 : 0,
+    });
+    const m = new THREE.Mesh(new THREE.PlaneGeometry(w, d), mat);
+    m.rotation.x = -Math.PI/2; m.position.set(cx, y, cz); m.receiveShadow = true;
+    scene.add(m);
+    // Load texture if a path is given and we're not on file://
+    if (texturePath && window.location.protocol !== 'file:') {
+      new THREE.TextureLoader().load(texturePath, (tex) => {
+        tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+        tex.repeat.set(Math.max(1, Math.round(w / 4)), Math.max(1, Math.round(d / 4)));
+        mat.map = tex;
+        mat.color.set(0x686868);  // mid-gray tint prevents ambient wash-out
+        mat.needsUpdate = true;
+      });
+      // On error the colour fallback stays — no extra handling needed
+    }
+    return m;
+  }
+  _addTrees(scene) {
+    // Per-biome tree data: count + bounds replace hardcoded positions.
+    // Positions are picked at runtime via _pickValidSpot, which checks
+    // lava zones, the starting pedestal, and all registered colliders.
+    const BIOME_TREES = [
+      { glb:'assets/AngerTree.glb',   color:0xBB2200, trunkCol:0x3D1A0A, count:6,  clearance:3.0,
+        bounds:{ xMin:-54, xMax:-14, zMin:-20, zMax:20 } },
+      { glb:'assets/WorryTree.glb',   color:0x7C4DA0, trunkCol:0x2C3E30, count:6,  clearance:3.0,
+        bounds:{ xMin:14,  xMax:54,  zMin:-20, zMax:20 } },
+      { glb:'assets/SadnessTree.glb', color:0x1A4F8C, trunkCol:0x1A2A40, count:6,  clearance:3.0,
+        bounds:{ xMin:-20, xMax:20,  zMin:-54, zMax:-14 } },
+      { glb:'assets/CalmTree.glb',    color:0x228B22, trunkCol:0x5C3D1A, count:7, clearance:5.0,
+        bounds:{ xMin:-18, xMax:18,  zMin:-18, zMax:14 } },
+    ];
+
+    BIOME_TREES.forEach(({ glb, color, trunkCol, count, clearance, bounds }) => {
+      // Pick all positions now (synchronously) and register them as colliders
+      // immediately so successive trees — and later stones — avoid them.
+      const positions = [];
+      for (let i = 0; i < count; i++) {
+        const spot = this._pickValidSpot(bounds, clearance);
+        if (!spot) continue;
+        positions.push(spot);
+        this._colliders.push({ x: spot[0], z: spot[1], r: 1.2 });
+      }
+
+      // Procedural fallback tree builder (file:// or GLB load error)
+      const buildFallback = ([x, z]) => {
+        const sc = 1.8 + Math.random() * 0.9;
+        const g  = new THREE.Group();
+        const trunk = new THREE.Mesh(
+          new THREE.CylinderGeometry(0.14*sc, 0.22*sc, 1.5*sc, 7),
+          new THREE.MeshStandardMaterial({ color: trunkCol, roughness: 0.95 })
+        );
+        trunk.position.y = 0.75*sc; trunk.castShadow = true; g.add(trunk);
+        const canopy = new THREE.Mesh(
+          new THREE.SphereGeometry(0.9*sc, 7, 6),
+          new THREE.MeshStandardMaterial({ color, roughness: 0.8 })
+        );
+        canopy.position.y = 1.9*sc; canopy.castShadow = true; g.add(canopy);
+        g.position.set(x, 0, z);
+        g.rotation.y = Math.random() * Math.PI * 2;
+        scene.add(g);
+      };
+
+      if (window.location.protocol !== 'file:') {
+        new GLTFLoader().load(glb, (gltf) => {
+          positions.forEach(([x, z]) => {
+            const sc    = 1.2 + Math.random() * 0.6;
+            const clone = gltf.scene.clone(true);
+            const box   = new THREE.Box3().setFromObject(clone);
+            const h     = (box.max.y - box.min.y) || 2;
+            clone.scale.setScalar((6.0 * sc) / h);
+            clone.traverse(c => {
+              if (!c.isMesh) return;
+              c.castShadow = true;
+              const mat = c.material;
+              if (mat) { mat.roughness = Math.min(mat.roughness ?? 1, 0.75); mat.envMapIntensity = 0; mat.needsUpdate = true; }
+            });
+            const box2 = new THREE.Box3().setFromObject(clone);
+            clone.position.set(x, -box2.min.y, z);
+            clone.rotation.y = Math.random() * Math.PI * 2;
+            scene.add(clone);
+          });
+        }, undefined, () => positions.forEach(buildFallback));
+      } else {
+        positions.forEach(buildFallback);
+      }
+    });
+  }
+
+  // Returns [x, z] of a valid placement spot inside bounds, or null.
+  _pickValidSpot(bounds, minClearance, maxAttempts = 80) {
+    for (let attempt = 0; attempt < maxAttempts; attempt++) {
+      const x = bounds.xMin + Math.random() * (bounds.xMax - bounds.xMin);
+      const z = bounds.zMin + Math.random() * (bounds.zMax - bounds.zMin);
+      if (this._isValidSpot(x, z, minClearance)) return [x, z];
+    }
+    return null;
+  }
+
+  // Returns true if (x, z) is safe to place an object:
+  //  • not inside or within lavaMargin of any lava zone
+  //  • not within 5 units of the centre pedestal
+  //  • at least (minClearance + collider.r) from every registered collider
+  _isValidSpot(x, z, minClearance) {
+    const lavaMargin = 2.5;
+    if (LAVA_ZONES.some(([x1,x2,z1,z2]) =>
+        x > x1 - lavaMargin && x < x2 + lavaMargin &&
+        z > z1 - lavaMargin && z < z2 + lavaMargin)) return false;
+    if (Math.hypot(x, z) < 5) return false;
+    return !this._colliders.some(c => Math.hypot(x - c.x, z - c.z) < minClearance + c.r);
+  }
+
+  _createFeelingElement(nd) {
+    const group = new THREE.Group();
+    group.position.set(...nd.pos);
+    this.scene.add(group);
+    const feEntry = { id:nd.id, mesh:group, solved:false, inRange:false, crystalIdx:nd.crystalIdx, followUp:nd.followUp||null };
+    this.feelingElements.push(feEntry);
+    this._colliders.push({ x: nd.pos[0], z: nd.pos[2], r: 1.2 }); // feeling element body radius
+
+    const addFallback = () => {
+      const body = new THREE.Mesh(
+        new THREE.CapsuleGeometry(0.8, 1.8, 8, 12),
+        new THREE.MeshStandardMaterial({ color:nd.color, roughness:0.6 })
+      );
+      body.position.y = 1.7; body.castShadow = true; group.add(body);
+      const orb = new THREE.Mesh(
+        new THREE.SphereGeometry(0.44, 8, 8),
+        new THREE.MeshStandardMaterial({ color:nd.color, emissive:new THREE.Color(nd.color), emissiveIntensity:0.6 })
+      );
+      orb.position.y = 3.7; group.add(orb);
+    };
+
+    // Load custom GLB if specified and we're on http:// (file:// blocks fetch)
+    if (nd.glb && window.location.protocol !== 'file:') {
+      const loader = new GLTFLoader();
+      loader.load(
+        nd.glb,
+        (gltf) => {
+          const model = gltf.scene;
+          // Auto-scale to ~4 units tall
+          const box    = new THREE.Box3().setFromObject(model);
+          const height = box.max.y - box.min.y;
+          model.scale.setScalar(4.0 / (height || 1));
+          // Sit on ground
+          box.setFromObject(model);
+          model.position.y -= box.min.y;
+          model.traverse(child => {
+            if (child.isMesh) {
+              child.castShadow = true;
+              const mat = child.material;
+              if (mat) { mat.roughness = Math.min(mat.roughness ?? 1, 0.75); mat.envMapIntensity = 0; mat.needsUpdate = true; }
+            }
+          });
+          group.add(model);
+          console.log('[FeelingElement] ' + nd.id + ' GLB loaded ✓');
+        },
+        undefined,
+        (err) => {
+          console.warn('[FeelingElement] Failed to load GLB for ' + nd.id + ', using fallback:', err);
+          addFallback();
+        }
+      );
+    } else {
+      addFallback();
+    }
+  }
+  _createCrystal(cd, i) {
+    const [x, y, z] = cd.pos;
+    const group = new THREE.Group();
+    group.position.set(x, y, z);
+    this.scene.add(group);
+    const light = new THREE.PointLight(cd.colorOff, 0, 8);
+    light.position.set(x, y + 1, z);
+    this.scene.add(light);
+    this.crystals.push({ mesh: group, light, unlocked: false, collected: false, colorOff: cd.colorOff, colorOn: cd.colorOn });
+
+    const addFallback = () => {
+      const mat = new THREE.MeshStandardMaterial({
+        color: cd.colorOff, emissive: new THREE.Color(cd.colorOff),
+        emissiveIntensity: 0.2, transparent: true, opacity: 0.5, metalness: 0.4, roughness: 0.2,
+      });
+      group.add(Object.assign(new THREE.Mesh(new THREE.IcosahedronGeometry(0.55, 1), mat),
+        { castShadow: true }));
+    };
+    if (window.location.protocol !== 'file:') {
+      new GLTFLoader().load(cd.glb, (gltf) => {
+        const model = gltf.scene;
+        const box    = new THREE.Box3().setFromObject(model);
+        const height = box.max.y - box.min.y || 1;
+        model.scale.setScalar(1.1 / height);
+        box.setFromObject(model); model.position.y -= box.min.y;
+        model.traverse(c => {
+          if (!c.isMesh) return;
+          c.castShadow = true;
+          const mat = c.material;
+          if (mat) { mat.roughness = Math.min(mat.roughness ?? 1, 0.75); mat.envMapIntensity = 0; mat.needsUpdate = true; }
+        });
+        group.add(model);
+      }, undefined, addFallback);
+    } else { addFallback(); }
+  }
+  unlockCrystal(idx) {
+    const cr = this.crystals[idx];
+    if (!cr || cr.unlocked) return;
+    cr.unlocked = true;
+    // Works for both Group (GLB) and fallback icosahedron
+    cr.mesh.traverse(child => {
+      if (!child.isMesh) return;
+      child.material.color.set(cr.colorOn);
+      if (child.material.emissive) child.material.emissive.set(cr.colorOn);
+      child.material.emissiveIntensity = 1.2;
+      if (child.material.transparent) child.material.opacity = 0.9;
+    });
+    cr.light.color.set(cr.colorOn);
+    cr.light.intensity = 2.2;
+  }
+  tryInteract(player) {
+    if (this._wisdomActive) return;
+    // Feeling elements take priority
+    const fe = this.feelingElements.find(n => n.inRange && !n.solved);
+    if (fe && !this.dlg.active) {
+      document.getElementById('interact-prompt').style.display = 'none';
+      this.dlg.open(fe.id, (success) => {
+        if (!success) return;
+        fe.solved = true;
+        const floatUp = setInterval(() => {
+          fe.mesh.position.y += 0.15;
+          fe.mesh.scale.multiplyScalar(0.96);
+          if (fe.mesh.scale.x < 0.05) { clearInterval(floatUp); fe.mesh.visible = false; }
+        }, 30);
+        this.unlockCrystal(fe.crystalIdx);
+        showToast('💎 Calm Crystal unlocked! Go collect it!');
+        if (fe.followUp) setTimeout(() => showTutorial(fe.followUp), 2500);
+        if (this.gm.state !== 'GREEN') setTimeout(() => this.gm.setState('GREEN'), 800);
+      });
+      return;
+    }
+    // Magical wisdom stones
+    const stone = this.magicalStones.find(s => s.inRange);
+    if (stone && !this.dlg.active) {
+      document.getElementById('interact-prompt').style.display = 'none';
+      this._openWisdom(stone);
+    }
+  }
+  _checkCrystals(player) {
+    this.crystals.forEach((cr, i) => {
+      if (cr.collected || !cr.unlocked) return;
+      if (player.mesh.position.distanceTo(cr.mesh.position) < 2.2) {
+        cr.collected = true;
+        cr.mesh.visible = false;
+        cr.light.intensity = 0;
+        this.crystalCount++;
+        this._updateCrystalUI();
+        musicSystem.playJingle();
+        showToast('✨ Calm Crystal collected! (' + this.crystalCount + '/' + this.crystalTotal + ')');
+        if (this.crystalCount >= this.crystalTotal)
+          setTimeout(() => this.onQuestComplete(this.crystalCount), 600);
+      }
+    });
+  }
+  _checkBiomeEmotion(player) {
+    if (this._biomeGracePeriod > 0) return;
+    const px = player.mesh.position.x, pz = player.mesh.position.z;
+    let biome = 'center';
+    if (LAVA_ZONES.some(([x1,x2,z1,z2]) => px>=x1 && px<=x2 && pz>=z1 && pz<=z2)) {
+      biome = 'lava';
+    } else if (px < -10) {
+      biome = 'volcano';
+    } else if (px > 10) {
+      biome = 'marsh';
+    } else if (pz < -10) {
+      biome = 'valley';
+    }
+    if (biome === this._lastBiome) return;
+    this._lastBiome = biome;
+    // Biome ambient soundscape
+    musicSystem.setAmbient(biome);
+    // First-visit tutorial tip
+    const _tips = {
+      volcano: '🌋 VOLCANO ISLAND\nUse I-Statements to calm the anger feelings.\n"I feel … when …" Find the red feeling elements and press E!',
+      marsh:   '🌫️ MISTY MARSH\nShine your Truth Lantern on worries to shrink them.\nChallenge scary "what-if" thoughts. Find the purple feeling elements and press E!',
+      valley:  '💧 BLUE VALLEY\nKindness and compassion ease sadness.\nSee others\' feelings and respond with care. Find the blue feeling elements and press E!',
+    };
+    if (_tips[biome] && !this._tutorialShown.has(biome)) {
+      this._tutorialShown.add(biome);
+      setTimeout(() => showTutorial(_tips[biome]), 400);
+    }
+    if (biome === 'lava') {
+      this.gm.setState('RED');
+      showToast('🌋 Scorching lava! You feel ANGRY. Hold SPACE to breathe!');
+    } else if (biome === 'volcano') {
+      if (this.gm.state !== 'RED') this.gm.setState('YELLOW');
+      showToast('🔥 Volcanic Valley — you feel your anger rising. Hold SPACE to breathe.');
+    } else if (biome === 'marsh') {
+      if (this.gm.state !== 'RED') this.gm.setState('YELLOW');
+      showToast('🌫️ Misty Marsh — worries swirl around you. Hold SPACE to breathe.');
+    } else if (biome === 'valley') {
+      if (this.gm.state !== 'RED') this.gm.setState('YELLOW');
+      showToast('💧 Blue Valley — a wave of sadness washes over you. Hold SPACE to breathe.');
+    } else if (biome === 'center' && !player.isBreathing) {
+      this.gm.setState('GREEN');
+      showToast('🌿 You feel calm and safe here.');
+    }
+  }
+  _checkFeelingProximity(player) {
+    let anyNearFE = false;
+    this.feelingElements.forEach(fe => {
+      if (fe.solved) { fe.inRange = false; return; }
+      fe.inRange = player.mesh.position.distanceTo(fe.mesh.position) < 4.5;
+      if (fe.inRange) anyNearFE = true;
+    });
+    let anyNearStone = false;
+    this.magicalStones.forEach(stone => {
+      const dx = player.mesh.position.x - stone.pos.x;
+      const dz = player.mesh.position.z - stone.pos.z;
+      stone.inRange = Math.sqrt(dx*dx + dz*dz) < 4.5;
+      if (stone.inRange) anyNearStone = true;
+    });
+    const prompt = document.getElementById('interact-prompt');
+    if (this._wisdomActive || this.dlg.active) {
+      prompt.style.display = 'none';
+    } else if (anyNearFE) {
+      prompt.innerHTML = 'Press <kbd>E</kbd> to help';
+      prompt.style.display = 'block';
+    } else if (anyNearStone) {
+      prompt.innerHTML = 'Press <kbd>E</kbd> to seek wisdom ✨';
+      prompt.style.display = 'block';
+    } else {
+      prompt.style.display = 'none';
+    }
+  }
+  _updateBiomeLabel(player) {
+    const x = player.mesh.position.x, z = player.mesh.position.z;
+    let lbl = '\u2b06\ufe0f Explore the three islands!';
+    let theme = 'overworld';
+    if      (x < -10) { lbl = '\ud83c\udf0b Volcanic Valley \u2014 Anger Island';   theme = 'volcano'; }
+    else if (x >  10) { lbl = '\ud83c\udf2b\ufe0f Misty Marsh \u2014 Worry Island';         theme = 'marsh';   }
+    else if (z < -10) { lbl = '\ud83d\udc99 Blue Valley \u2014 Sadness Island';       theme = 'valley';  }
+    document.getElementById('biome-label').textContent = lbl;
+    musicSystem.setTheme(theme);
+  }
+  _updateCrystalUI() {
+    const el = document.getElementById('crystal-count');
+    if (el) el.textContent = this.crystalCount + ' / ' + this.crystalTotal;
+  }
+  spinCrystals(delta) {
+    this.crystals.forEach((cr, i) => {
+      if (!cr.collected) {
+        cr.mesh.rotation.y   += delta * (cr.unlocked ? 1.8 : 0.5);
+        cr.mesh.position.y    = CRYSTAL_DATA[i].pos[1] + Math.sin(Date.now()*0.001 + i*1.1)*0.18;
+      }
+    });
+  }
+  update(delta, player) {
+    if (this._biomeGracePeriod > 0) this._biomeGracePeriod -= delta;
+    this.spinCrystals(delta);
+    this._updateParticles(delta);
+    this._checkFeelingProximity(player);
+    this._checkBiomeEmotion(player);
+    this._checkCrystals(player);
+    this._updateBiomeLabel(player);
+    this._animateMist(delta, player);
+    this._updateDog(delta, player);
+    this._animateMagicalStones(delta);
+    if (this._playerHitCooldown > 0) this._playerHitCooldown -= delta;
+    const anyInteracting = this._wisdomActive || this.dlg.active ||
+      (this._dog && this._dog.petting > 0) || player.isBreathing;
+    this._updateWisps(delta, player, anyInteracting);
+  }
+  _animateMist(delta, player) {
+    const t      = Date.now() * 0.001;
+    const inMarsh = player.mesh.position.x > 10;
+    this._mistClouds.forEach((cloud, i) => {
+      const mat = cloud.pts.material;
+      // Fade in when player is in marsh, fade out when they leave
+      const targetOpacity = inMarsh ? (0.30 + 0.18 * Math.sin(t * 0.4 + cloud.phase)) : 0.0;
+      mat.opacity += (targetOpacity - mat.opacity) * Math.min(1, 1.8 * delta);
+
+      // Slow sinusoidal drift from the cloud's base position
+      cloud.pts.position.x = cloud.baseX + Math.sin(t * 0.12 + cloud.phase) * 2.5;
+      cloud.pts.position.z = cloud.baseZ + Math.cos(t * 0.09 + cloud.phase) * 2.0;
+      // Slight vertical breathing
+      cloud.pts.position.y = Math.sin(t * 0.25 + cloud.phase) * 0.25;
+    });
+  }
+
+  // ── Magical Wisdom Stones ─────────────────────────────────────────
+  _addMagicalStones(scene) {
+    const STONE_DEFS = [
+      {
+        glb: 'assets/EmberStone.glb',
+        color: 0xFF6A1A, glowColor: 0xFF4400,
+        bounds: { xMin: -48, xMax: -22, zMin: -42, zMax: -10 },
+        name: '🔥 Ember Stone',
+        portrait: '🔥',
+        quotes: [
+          'Anger is energy — the brave choice is what you do with it.',
+          'Three deep breaths give your brain time to choose how to respond.',
+          'Behind every big angry feeling there is often a quieter hurt waiting to be heard.',
+          'You can feel angry AND still choose kindness. Your feelings and your actions are separate.',
+          'When you name your emotion out loud, you take away its power to control you.',
+        ],
+      },
+      {
+        glb: 'assets/MistStone.glb',
+        color: 0xA855F7, glowColor: 0x7C3AED,
+        bounds: { xMin: 18, xMax: 52, zMin: -42, zMax: -10 },
+        name: '🔮 Mist Stone',
+        portrait: '🔮',
+        quotes: [
+          'Worrying about tomorrow steals joy from today. You are safe right now.',
+          'Courage is not the absence of fear — it is taking the next small step despite it.',
+          'You do not have to solve everything at once. One breath, one moment, one step.',
+          'Most things we worry about never happen. Your brave self is stronger than any what-if.',
+          'Asking for help is not weakness — it is the wisdom of every great guardian.',
+        ],
+      },
+      {
+        glb: 'assets/SorrowStone.glb',
+        color: 0x38BDF8, glowColor: 0x0EA5E9,
+        bounds: { xMin: -18, xMax: 18, zMin: -78, zMax: -44 },
+        name: '💙 Sorrow Stone',
+        portrait: '💙',
+        quotes: [
+          'It is okay to feel sad. Tears are how hearts tell their stories.',
+          'You are never truly alone — in the quietest moment, someone cares about you.',
+          'Sadness passes, like clouds through a wide and patient sky. The sun is always there.',
+          'Every feeling deserves to be heard. Sitting with sadness is sometimes the bravest thing.',
+          'Reaching out to someone you trust when you feel low is a superpower, not a weakness.',
+        ],
+      },
+    ];
+    STONE_DEFS.forEach(def => {
+      const pos = this._randomStonePlacement(def.bounds);
+      if (pos) this.magicalStones.push(this._createMagicalStone(scene, pos[0], pos[1], def));
+    });
+  }
+  _randomStonePlacement(bounds) {
+    return this._pickValidSpot(bounds, 5.0);
+  }
+  _createMagicalStone(scene, x, z, def) {
+    const group = new THREE.Group();
+    group.position.set(x, 0, z);
+
+    const stoneMat   = new THREE.MeshStandardMaterial({ color: 0x7A7870, roughness: 0.9, metalness: 0.05 });
+    const runeMat    = new THREE.MeshStandardMaterial({ color: def.color, emissive: new THREE.Color(def.color), emissiveIntensity: 0.7 });
+    const crystalMat = new THREE.MeshStandardMaterial({ color: def.color, emissive: new THREE.Color(def.color), emissiveIntensity: 1.0, transparent: true, opacity: 0.88, metalness: 0.4, roughness: 0.1 });
+    const ringMat    = new THREE.MeshStandardMaterial({ color: def.color, emissive: new THREE.Color(def.color), emissiveIntensity: 0.8, transparent: true, opacity: 0.80, metalness: 0.3, roughness: 0.2 });
+
+    // ── Procedural base + pillar (replaced by GLB if available) ──────────
+    const proceduralBase = new THREE.Group();
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(1.5, 1.8, 0.4, 6), stoneMat);
+    base.position.y = 0.2; base.receiveShadow = true; base.castShadow = true; proceduralBase.add(base);
+    const pillar = new THREE.Mesh(new THREE.CylinderGeometry(0.42, 0.58, 3.0, 6), stoneMat);
+    pillar.position.y = 1.9; pillar.castShadow = true; proceduralBase.add(pillar);
+    for (let i = 0; i < 3; i++) {
+      const rune = new THREE.Mesh(new THREE.TorusGeometry(0.52, 0.05, 6, 20), runeMat);
+      rune.position.y = 0.9 + i * 0.9; rune.rotation.x = Math.PI / 2; proceduralBase.add(rune);
+    }
+    group.add(proceduralBase);
+
+    // ── Animated crown (always procedural — sits on top of whatever base is used) ──
+    const CROWN_Y = 3.7;
+    const ring = new THREE.Mesh(new THREE.TorusGeometry(1.0, 0.06, 8, 32), ringMat);
+    ring.rotation.x = Math.PI / 2; ring.position.y = CROWN_Y; group.add(ring);
+    const crystal = new THREE.Mesh(new THREE.OctahedronGeometry(0.6, 1), crystalMat);
+    crystal.position.y = CROWN_Y; crystal.castShadow = true; group.add(crystal);
+    const orbGroup = new THREE.Group();
+    orbGroup.position.y = CROWN_Y;
+    const orbMat = new THREE.MeshStandardMaterial({ color: def.color, emissive: new THREE.Color(def.color), emissiveIntensity: 1.3, transparent: true, opacity: 0.9 });
+    for (let i = 0; i < 3; i++) {
+      const orb = new THREE.Mesh(new THREE.SphereGeometry(0.1, 6, 6), orbMat);
+      const ang = (i / 3) * Math.PI * 2;
+      orb.position.set(Math.cos(ang) * 0.88, (i - 1) * 0.22, Math.sin(ang) * 0.88);
+      orbGroup.add(orb);
+    }
+    group.add(orbGroup);
+    const light = new THREE.PointLight(def.glowColor, 1.6, 9);
+    light.position.y = CROWN_Y; group.add(light);
+
+    scene.add(group);
+
+    // ── Try loading the GLB to replace the procedural base ───────────────
+    if (def.glb && window.location.protocol !== 'file:') {
+      new GLTFLoader().load(def.glb, (gltf) => {
+        const model = gltf.scene;
+        const box = new THREE.Box3().setFromObject(model);
+        const h = (box.max.y - box.min.y) || 3.4;
+        model.scale.setScalar(3.4 / h);      // match procedural pillar height
+        box.setFromObject(model);
+        model.position.y -= box.min.y;       // sit on ground
+        model.traverse(c => {
+          if (!c.isMesh) return;
+          c.castShadow = true; c.receiveShadow = true;
+          if (c.material) { c.material.roughness = Math.min(c.material.roughness ?? 1, 0.8); c.material.envMapIntensity = 0; c.material.needsUpdate = true; }
+        });
+        group.remove(proceduralBase);        // swap out procedural base
+        group.add(model);
+      }); // on error: keep procedural base — no extra handling needed
+    }
+
+    const collider = { x, z, r: 1.8 };
+    this._colliders.push(collider);
+    return { mesh: group, pos: { x, z }, crystal, ring, orbGroup, light,
+             collider,
+             name: def.name, portrait: def.portrait, quotes: def.quotes.slice(),
+             quoteIdx: Math.floor(Math.random() * def.quotes.length),
+             quotesShown: 0, dissolving: false, inRange: false };
+  }
+  _animateMagicalStones(delta) {
+    if (!this._dissolvingStones) this._dissolvingStones = [];
+
+    // Tick active stones
+    const t = Date.now() * 0.001;
+    this.magicalStones.forEach((stone, i) => {
+      const bob = Math.sin(t * 1.1 + i * 2.0) * 0.2;
+      stone.crystal.position.y   = 3.7 + bob;
+      stone.ring.position.y      = 3.7 + bob;
+      stone.ring.rotation.z     += delta * 0.55;
+      stone.orbGroup.rotation.y += delta * 1.1;
+      stone.orbGroup.position.y  = 3.7 + bob;
+      stone.light.intensity      = 1.4 + Math.sin(t * 1.8 + i * 1.5) * 0.4;
+    });
+
+    // Fade-out dissolving stones over ~1.5 s then remove from scene
+    for (let i = this._dissolvingStones.length - 1; i >= 0; i--) {
+      const stone = this._dissolvingStones[i];
+      const speed = delta / 1.5;
+      stone._opacity = Math.max(0, stone._opacity - speed);
+      stone.light.intensity = Math.max(0, stone.light.intensity - speed * 2);
+      stone.mesh.traverse(c => {
+        if (c.isMesh && c.material) c.material.opacity = stone._opacity;
+      });
+      stone.mesh.position.y += delta * 0.6; // drift upward as it fades
+      if (stone._opacity <= 0) {
+        this.scene.remove(stone.mesh);
+        this._dissolvingStones.splice(i, 1);
+      }
+    }
+  }
+  _openWisdom(stone) {
+    this._wisdomActive = true;
+    const quote = stone.quotes[stone.quoteIdx];
+    stone.quoteIdx   = (stone.quoteIdx + 1) % stone.quotes.length;
+    stone.quotesShown = Math.min(stone.quotesShown + 1, stone.quotes.length);
+    const isLast = stone.quotesShown >= stone.quotes.length;
+    document.getElementById('wisdom-portrait').textContent = stone.portrait;
+    document.getElementById('wisdom-name').textContent     = stone.name;
+    document.getElementById('wisdom-quote').textContent    = '\u201c' + quote + '\u201d';
+    const overlay  = document.getElementById('wisdom-overlay');
+    const closeBtn = document.getElementById('wisdom-close');
+    if (isLast) closeBtn.textContent = 'Farewell, Guardian \u2728';
+    overlay.style.display = 'flex';
+    const close = () => {
+      overlay.style.display = 'none';
+      closeBtn.textContent = 'Close';
+      this._wisdomActive = false;
+      closeBtn.removeEventListener('click', close);
+      if (isLast) this._dissolveStone(stone);
+    };
+    closeBtn.addEventListener('click', close);
+  }
+  _dissolveStone(stone) {
+    // Remove the collision zone immediately so no invisible wall remains
+    const idx = this._colliders.indexOf(stone.collider);
+    if (idx !== -1) this._colliders.splice(idx, 1);
+    // Remove from active list so it's no longer proximity-checked or animated
+    const si = this.magicalStones.indexOf(stone);
+    if (si !== -1) this.magicalStones.splice(si, 1);
+    stone.inRange    = false;
+    stone.dissolving = true;
+    stone._opacity   = 1;
+    // Make every mesh transparent up-front so the fade loop can drive opacity freely
+    stone.mesh.traverse(c => {
+      if (c.isMesh && c.material) { c.material.transparent = true; c.material.needsUpdate = true; }
+    });
+    if (!this._dissolvingStones) this._dissolvingStones = [];
+    this._dissolvingStones.push(stone);
+    showToast('\u2728 The ' + stone.name + ' has shared all its wisdom and fades away.');
+  }
+
+  // ── Feeling-enemy Wisps ──────────────────────────────────────────
+  _buildWisps(scene) {
+    WISP_DEFS.forEach(def => {
+      const group = new THREE.Group();
+      const sx = def.bounds.xMin + Math.random() * (def.bounds.xMax - def.bounds.xMin);
+      const sz = def.bounds.zMin + Math.random() * (def.bounds.zMax - def.bounds.zMin);
+      group.position.set(sx, def.height, sz);
+      scene.add(group);
+
+      // Procedural fallback — glowing orb + wispy tail
+      const coreMat = new THREE.MeshStandardMaterial({
+        color: def.color, emissive: new THREE.Color(def.color),
+        emissiveIntensity: 1.1, transparent: true, opacity: 0.88,
+        metalness: 0.1, roughness: 0.2,
+      });
+      const core = new THREE.Mesh(new THREE.SphereGeometry(0.55, 10, 8), coreMat);
+      group.add(core);
+      const tailMat = new THREE.MeshStandardMaterial({
+        color: def.color, emissive: new THREE.Color(def.color),
+        emissiveIntensity: 0.7, transparent: true, opacity: 0.55,
+      });
+      const tail = new THREE.Mesh(new THREE.ConeGeometry(0.22, 1.1, 6), tailMat);
+      tail.rotation.x = Math.PI; tail.position.y = -0.7;
+      group.add(tail);
+      const light = new THREE.PointLight(def.glowCol, 1.4, 7);
+      group.add(light);
+
+      const wisp = {
+        def, mesh: group, core, tail, light,
+        active: true, respawnTimer: 0,
+        velX: (Math.random() - 0.5) * 2,
+        velZ: (Math.random() - 0.5) * 2,
+        speed: 1.1 + Math.random() * 0.4,
+        targetX: sx, targetZ: sz,
+        wanderTimer: 0,
+      };
+
+      if (window.location.protocol !== 'file:') {
+        new GLTFLoader().load(def.glb, (gltf) => {
+          group.remove(core); group.remove(tail);
+          const model = gltf.scene;
+          const box = new THREE.Box3().setFromObject(model);
+          const h   = box.max.y - box.min.y || 1;
+          model.scale.setScalar(2.2 / h);
+          box.setFromObject(model); model.position.y -= box.min.y;
+          model.rotation.y = Math.PI;
+          model.traverse(c => {
+            if (!c.isMesh) return;
+            c.castShadow = true;
+            const m = c.material;
+            if (m) { m.roughness = Math.min(m.roughness ?? 1, 0.75); m.envMapIntensity = 0; m.needsUpdate = true; }
+          });
+          group.add(model);
+        }, undefined, () => { /* keep fallback */ });
+      }
+
+      this.wisps.push(wisp);
+    });
+  }
+
+  _updateWisps(delta, player, anyInteracting) {
+    const t = Date.now() * 0.001;
+    this.wisps.forEach((wisp, wi) => {
+      // ── Respawn countdown ──────────────────────────────────────────
+      if (!wisp.active) {
+        wisp.respawnTimer -= delta;
+        if (wisp.respawnTimer <= 0) {
+          wisp.active = true;
+          const b = wisp.def.bounds;
+          for (let attempt = 0; attempt < 30; attempt++) {
+            const rx = b.xMin + Math.random() * (b.xMax - b.xMin);
+            const rz = b.zMin + Math.random() * (b.zMax - b.zMin);
+            if (Math.hypot(rx - player.mesh.position.x, rz - player.mesh.position.z) > 12) {
+              wisp.mesh.position.set(rx, wisp.def.height, rz);
+              break;
+            }
+          }
+          wisp.mesh.visible = true;
+          showToast('\uD83D\uDC41\uFE0F A feeling-spirit has returned to the island...');
+        }
+        return;
+      }
+
+      // ── Freeze while player is interacting ────────────────────────
+      if (anyInteracting) return;
+
+      const px = player.mesh.position.x, pz = player.mesh.position.z;
+      const b  = wisp.def.bounds;
+      const playerInBiome = px >= b.xMin && px <= b.xMax && pz >= b.zMin && pz <= b.zMax;
+
+      // ── Destination: chase player the moment they enter the biome ──
+      let destX, destZ;
+      if (playerInBiome) {
+        // Direct pursuit — no wander blend, full lock-on
+        destX = px;
+        destZ = pz;
+        wisp.wanderTimer = 0; // reset so wander re-picks immediately when player leaves
+      } else {
+        // Player is outside — wander inside the biome
+        wisp.wanderTimer -= delta;
+        if (wisp.wanderTimer <= 0) {
+          wisp.targetX = b.xMin + Math.random() * (b.xMax - b.xMin);
+          wisp.targetZ = b.zMin + Math.random() * (b.zMax - b.zMin);
+          wisp.wanderTimer = 3 + Math.random() * 4;
+        }
+        destX = wisp.targetX;
+        destZ = wisp.targetZ;
+      }
+
+      // ── Smooth steering toward destination ────────────────────────
+      const dx = destX - wisp.mesh.position.x;
+      const dz = destZ - wisp.mesh.position.z;
+      const dl = Math.sqrt(dx*dx + dz*dz) || 0.001;
+      const lk = 1 - Math.pow(0.008, delta);
+      wisp.velX += ((dx / dl) * wisp.speed - wisp.velX) * lk;
+      wisp.velZ += ((dz / dl) * wisp.speed - wisp.velZ) * lk;
+
+      let nx = wisp.mesh.position.x + wisp.velX * delta;
+      let nz = wisp.mesh.position.z + wisp.velZ * delta;
+
+      // ── Clamp inside biome ────────────────────────────────────────
+      nx = Math.max(b.xMin + 1, Math.min(b.xMax - 1, nx));
+      nz = Math.max(b.zMin + 1, Math.min(b.zMax - 1, nz));
+
+      // ── Steer around static colliders ─────────────────────────────
+      const WISP_R = 0.8;
+      for (const c of this._colliders) {
+        const cdx = nx - c.x, cdz = nz - c.z;
+        const cdist = Math.sqrt(cdx*cdx + cdz*cdz);
+        const minD  = WISP_R + c.r + 0.3;
+        if (cdist < minD && cdist > 0.001) {
+          const over = (minD - cdist) / cdist;
+          nx += cdx * over; nz += cdz * over;
+          const nx_ = cdx / cdist, nz_ = cdz / cdist;
+          const dot = wisp.velX * nx_ + wisp.velZ * nz_;
+          if (dot < 0) { wisp.velX -= 2 * dot * nx_; wisp.velZ -= 2 * dot * nz_; }
+        }
+      }
+
+      // ── Avoid lava zones ──────────────────────────────────────────
+      LAVA_ZONES.forEach(([x1,x2,z1,z2]) => {
+        if (nx > x1-1 && nx < x2+1 && nz > z1-1 && nz < z2+1) {
+          wisp.velX = -wisp.velX;
+          nx = wisp.mesh.position.x;
+          nz = wisp.mesh.position.z;
+        }
+      });
+
+      wisp.mesh.position.x = nx;
+      wisp.mesh.position.z = nz;
+      wisp.mesh.position.y = wisp.def.height + Math.sin(t * 1.6 + wi * 2.1) * 0.25;
+
+      // Face movement direction
+      const moveLen = Math.sqrt(wisp.velX*wisp.velX + wisp.velZ*wisp.velZ);
+      if (moveLen > 0.05) {
+        const targetAngle = Math.atan2(-wisp.velX, -wisp.velZ);
+        let diff = targetAngle - wisp.mesh.rotation.y;
+        while (diff >  Math.PI) diff -= Math.PI * 2;
+        while (diff < -Math.PI) diff += Math.PI * 2;
+        wisp.mesh.rotation.y += diff * Math.min(1, 6 * delta);
+      }
+
+      wisp.light.intensity = 1.2 + Math.sin(t * 2.2 + wi * 1.4) * 0.5;
+
+      // ── Hit detection ─────────────────────────────────────────────
+      if (this._playerHitCooldown <= 0) {
+        const hitDist = Math.hypot(nx - player.mesh.position.x, nz - player.mesh.position.z);
+        if (hitDist < 1.4) this._onWispHit(wisp, player);
+      }
+    });
+  }
+
+  _onWispHit(wisp, player) {
+    // Downgrade regulation state
+    const gm = this.gm;
+    if      (gm.state === 'GREEN')  gm.setState('YELLOW');
+    else if (gm.state === 'YELLOW') gm.setState('RED');
+
+    const msgs = wisp.def.messages;
+    showToast(msgs[Math.floor(Math.random() * msgs.length)]);
+
+    // Red screen flash
+    const canvas = document.getElementById('game-canvas');
+    canvas.classList.add('hit-flash');
+    setTimeout(() => canvas.classList.remove('hit-flash'), 350);
+
+    // Wisp vanishes — 60-second respawn
+    wisp.active = false;
+    wisp.respawnTimer = 60;
+    wisp.mesh.visible = false;
+
+    // Brief invincibility window
+    this._playerHitCooldown = 1.5;
+  }
+  _buildParticles(scene) {
+    this._particleSystems = [];
+    const mk = (count, bounds, cfg) => {
+      const pos = new Float32Array(count * 3);
+      const vel = [];
+      for (let i = 0; i < count; i++) {
+        pos[i*3]   = bounds.xMin + Math.random() * (bounds.xMax - bounds.xMin);
+        pos[i*3+1] = Math.random() * cfg.yRange;
+        pos[i*3+2] = bounds.zMin + Math.random() * (bounds.zMax - bounds.zMin);
+        vel.push({ x:(Math.random()-0.5)*cfg.vx, y:cfg.vy+Math.random()*cfg.vyR, z:(Math.random()-0.5)*cfg.vz });
+      }
+      const geo = new THREE.BufferGeometry();
+      geo.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+      const mat = new THREE.PointsMaterial({ color:cfg.color, size:cfg.size, transparent:true, opacity:cfg.opacity, sizeAttenuation:true, depthWrite:false });
+      const pts = new THREE.Points(geo, mat);
+      scene.add(pts);
+      return { pts, pos, vel, bounds, cfg };
+    };
+    // Volcano embers — float upward through the anger island
+    this._particleSystems.push(mk(70, { xMin:-54, xMax:-12, zMin:-18, zMax:18 },
+      { color:0xFF6600, size:0.22, opacity:0.75, yRange:8, vy:1.6, vyR:1.4, vx:0.5, vz:0.5 }));
+    // Marsh mist — gentle slow drift through the worry island
+    this._particleSystems.push(mk(55, { xMin:14, xMax:56, zMin:-18, zMax:18 },
+      { color:0xBB99FF, size:0.30, opacity:0.28, yRange:3, vy:0.25, vyR:0.25, vx:0.8, vz:0.8 }));
+    // Valley rain — falling drops through the sadness island
+    this._particleSystems.push(mk(80, { xMin:-20, xMax:20, zMin:-54, zMax:-14 },
+      { color:0x4499FF, size:0.12, opacity:0.55, yRange:12, vy:-3.5, vyR:-1.2, vx:0.1, vz:0.1 }));
+  }
+  _updateParticles(delta) {
+    if (!this._particleSystems) return;
+    this._particleSystems.forEach(({ pts, pos, vel, bounds, cfg }) => {
+      const count = vel.length;
+      const maxY  = cfg.yRange + 4;
+      for (let i = 0; i < count; i++) {
+        const v = vel[i];
+        pos[i*3]   += v.x * delta;
+        pos[i*3+1] += v.y * delta;
+        pos[i*3+2] += v.z * delta;
+        if (v.y > 0 && pos[i*3+1] > maxY) { pos[i*3+1] = 0;   pos[i*3] = bounds.xMin+Math.random()*(bounds.xMax-bounds.xMin); pos[i*3+2] = bounds.zMin+Math.random()*(bounds.zMax-bounds.zMin); }
+        if (v.y < 0 && pos[i*3+1] < 0)    { pos[i*3+1] = maxY; pos[i*3] = bounds.xMin+Math.random()*(bounds.xMax-bounds.xMin); pos[i*3+2] = bounds.zMin+Math.random()*(bounds.zMax-bounds.zMin); }
+        if (pos[i*3]   < bounds.xMin) pos[i*3]   = bounds.xMax;
+        if (pos[i*3]   > bounds.xMax) pos[i*3]   = bounds.xMin;
+        if (pos[i*3+2] < bounds.zMin) pos[i*3+2] = bounds.zMax;
+        if (pos[i*3+2] > bounds.zMax) pos[i*3+2] = bounds.zMin;
+      }
+      pts.geometry.attributes.position.needsUpdate = true;
+    });
+  }
+  _playEndingScene(callback) {
+    showToast('🌟 All crystals collected! The world is healing…', 5000);
+    // Dissolve all wisps dramatically
+    this.wisps.forEach(w => {
+      const diss = setInterval(() => {
+        w.mesh.scale.multiplyScalar(0.90);
+        w.mesh.traverse(c => { if (c.isMesh && c.material) { c.material.transparent = true; c.material.opacity = Math.max(0, (c.material.opacity || 1) - 0.06); } });
+        if (w.mesh.scale.x < 0.02) { clearInterval(diss); w.mesh.visible = false; }
+      }, 40);
+    });
+    // Brighten the scene over 3 s then trigger reflection screen
+    const t0 = performance.now();
+    const brighten = setInterval(() => {
+      const p = Math.min(1, (performance.now() - t0) / 3000);
+      ambientLight.intensity = 0.8 + p * 1.8;
+      hemiLight.intensity    = 0.4 + p * 0.5;
+      if (p >= 1) { clearInterval(brighten); callback(); }
+    }, 50);
+  }
+}
+
+/* ================================================================
+   MUSIC — 8-bit procedural chiptune, Web Audio API
+================================================================ */
+const MUSIC_THEMES = (() => {
+  const N = { r: 0 };
+  const _n = ['C','Cs','D','Ds','E','F','Fs','G','Gs','A','As','B'];
+  [3,4,5,6].forEach(o => _n.forEach((nm,i) => { N[nm+o] = 440 * Math.pow(2,(o*12+i-57)/12); }));
+  return {
+    overworld: { bpm:140, voices:[
+      [ // melody
+        [N.G5,.5],[N.r,.5],[N.G5,.5],[N.E5,.5], [N.G5,.5],[N.A5,.5],[N.B5,1],
+        [N.A5,.5],[N.G5,.5],[N.Fs5,.5],[N.E5,.5],[N.G5,2],
+        [N.r,.5],[N.A5,.5],[N.r,.5],[N.Fs5,.5], [N.A5,.5],[N.B5,.5],[N.D5,.5],[N.B5,.5],
+        [N.E5,.5],[N.Fs5,.5],[N.G5,.5],[N.A5,.5],[N.G5,2],
+      ],
+      [ // harmony
+        [N.E5,.5],[N.r,.5],[N.E5,.5],[N.C5,.5], [N.E5,.5],[N.Fs5,.5],[N.G5,1],
+        [N.Fs5,.5],[N.E5,.5],[N.D5,.5],[N.C5,.5],[N.E5,2],
+        [N.r,.5],[N.Fs5,.5],[N.r,.5],[N.D5,.5], [N.Fs5,.5],[N.G5,.5],[N.B4,.5],[N.G4,.5],
+        [N.C5,.5],[N.D5,.5],[N.E5,.5],[N.Fs5,.5],[N.E5,2],
+      ],
+      [ // bass
+        [N.G3,1],[N.D4,1],[N.G3,1],[N.D4,1],[N.A3,1],[N.E4,1],[N.G3,2],
+        [N.D4,1],[N.A3,1],[N.G3,1],[N.D4,1],[N.C4,1],[N.G3,1],[N.G3,2],
+      ],
+    ]},
+    volcano: { bpm:162, voices:[
+      [ // melody — aggressive D minor
+        [N.D5,.5],[N.F5,.5],[N.E5,.5],[N.D5,.5], [N.Cs5,.5],[N.D5,.5],[N.r,1],
+        [N.Gs4,.5],[N.A4,.5],[N.As4,.5],[N.A4,.5],[N.D5,2],
+        [N.F5,.5],[N.G5,.5],[N.F5,.5],[N.E5,.5], [N.D5,.5],[N.C5,.5],[N.As4,.5],[N.A4,.5],
+        [N.G4,.5],[N.A4,.5],[N.As4,.5],[N.A4,.5],[N.D4,2],
+      ],
+      [ // bass — punchy
+        [N.D3,.5],[N.r,.5],[N.D3,.5],[N.r,.5],[N.As3,.5],[N.r,.5],[N.A3,.5],[N.r,.5],
+        [N.D3,.5],[N.r,.5],[N.D3,.5],[N.r,.5],[N.A3,2],
+        [N.As3,.5],[N.r,.5],[N.As3,.5],[N.r,.5],[N.A3,.5],[N.r,.5],[N.A3,.5],[N.r,.5],
+        [N.G3,.5],[N.r,.5],[N.G3,.5],[N.r,.5],[N.D3,2],
+      ],
+    ]},
+    marsh: { bpm:92, voices:[
+      [ // melody — eerie A minor
+        [N.A4,1],[N.r,.5],[N.C5,.5],[N.E5,1.5],[N.D5,.5],
+        [N.C5,.5],[N.B4,.5],[N.A4,1],[N.r,2],
+        [N.G4,1],[N.r,.5],[N.Gs4,.5],[N.A4,1.5],[N.G4,.5],
+        [N.F4,.5],[N.G4,.5],[N.A4,1],[N.r,2],
+      ],
+      [ // arpeggio
+        [N.A4,.5],[N.C5,.5],[N.E5,.5],[N.C5,.5],[N.A4,.5],[N.C5,.5],[N.E5,.5],[N.C5,.5],
+        [N.A4,.5],[N.C5,.5],[N.E5,.5],[N.C5,.5],[N.A4,2],
+        [N.G4,.5],[N.As4,.5],[N.D5,.5],[N.As4,.5],[N.G4,.5],[N.As4,.5],[N.D5,.5],[N.As4,.5],
+        [N.F4,.5],[N.A4,.5],[N.C5,.5],[N.A4,.5],[N.A4,2],
+      ],
+      [ // bass
+        [N.A3,2],[N.E3,2],[N.A3,2],[N.E3,2],
+        [N.G3,2],[N.D3,2],[N.A3,2],[N.E3,2],
+      ],
+    ]},
+    valley: { bpm:76, voices:[
+      [ // melody — melancholic E minor
+        [N.E4,1.5],[N.D4,.5],[N.C4,1],[N.B3,1],[N.G4,1.5],[N.A4,.5],[N.B4,2],
+        [N.A4,1],[N.G4,1],[N.F4,1.5],[N.E4,.5],[N.D4,1],[N.C4,1],[N.E4,2],
+      ],
+      [ // arpeggio
+        [N.E4,.5],[N.G4,.5],[N.B4,.5],[N.G4,.5],[N.E4,.5],[N.G4,.5],[N.B4,.5],[N.G4,.5],
+        [N.C4,.5],[N.E4,.5],[N.G4,.5],[N.E4,.5],[N.G4,2],
+        [N.A3,.5],[N.C4,.5],[N.E4,.5],[N.C4,.5],[N.A3,.5],[N.C4,.5],[N.E4,.5],[N.C4,.5],
+        [N.C4,.5],[N.E4,.5],[N.G4,.5],[N.E4,.5],[N.E4,2],
+      ],
+      [ // bass
+        [N.E3,2],[N.B3,2],[N.C3,2],[N.G3,2],
+        [N.G3,2],[N.D4,2],[N.E3,2],[N.B3,2],
+      ],
+    ]},
+  };
+})();
+
+class MusicSystem {
+  constructor() {
+    this._ctx    = null;
+    this._master = null;
+    this._theme  = '';
+    this._seqId  = 0;
+    this._muted  = false;
+    this._ambientGain  = null;
+    this._ambientOscs  = [];
+    this._ambientBiome = '';
+  }
+  start() {
+    if (this._ctx) { this._ctx.resume(); return; }
+    this._ctx    = new (window.AudioContext || window.webkitAudioContext)();
+    this._master = this._ctx.createGain();
+    this._master.gain.value = 0.14;
+    this._master.connect(this._ctx.destination);
+    this.setTheme('overworld');
+  }
+  setTheme(name) {
+    if (this._theme === name || !this._ctx) return;
+    this._theme = name;
+    this._seqId++;
+    this._loop(name, this._seqId, this._ctx.currentTime + 0.08);
+  }
+  toggleMute() {
+    this._muted = !this._muted;
+    if (this._master) this._master.gain.value = this._muted ? 0 : 0.14;
+    if (this._ambientGain && this._ctx) this._ambientGain.gain.setTargetAtTime(this._muted ? 0 : 0.035, this._ctx.currentTime, 0.3);
+    return this._muted;
+  }
+  // Stops the current procedural music and plays assets/victory.mp3 once.
+  playVictory() {
+    // Silence the generative loop
+    this._seqId++;
+    this._theme = 'victory';
+    if (!this._ctx) return;
+    if (window.location.protocol === 'file:') return; // fetch blocked on file://
+    // Resume the AudioContext in case it was suspended (browser autoplay policy)
+    const play = () => {
+      fetch('assets/victory.mp3')
+        .then(r => r.arrayBuffer())
+        .then(buf => this._ctx.decodeAudioData(buf))
+        .then(decoded => {
+          const src = this._ctx.createBufferSource();
+          src.buffer = decoded;
+          const gain = this._ctx.createGain();
+          gain.gain.value = this._muted ? 0 : 0.7;
+          src.connect(gain); gain.connect(this._ctx.destination);
+          src.start();
+        })
+        .catch(() => { /* victory.mp3 missing — silent fallback */ });
+    };
+    if (this._ctx.state === 'suspended') {
+      this._ctx.resume().then(play);
+    } else {
+      play();
+    }
+  }
+  playBreathIn() {
+    if (!this._ctx || this._muted) return;
+    const ctx = this._ctx, t = ctx.currentTime;
+    const dur = 3.6;
+    // Short noise buffer — looped isn't needed since dur fits in memory
+    const bufLen = Math.ceil(ctx.sampleRate * dur);
+    const buf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < bufLen; i++) d[i] = Math.random() * 2 - 1;
+    const src = ctx.createBufferSource(); src.buffer = buf;
+    // Lowpass keeps more energy than bandpass; cutoff rises giving "opening airway" feel
+    const filt = ctx.createBiquadFilter(); filt.type = 'lowpass';
+    filt.frequency.setValueAtTime(300, t);
+    filt.frequency.linearRampToValueAtTime(2200, t + dur * 0.85);
+    filt.Q.value = 0.7;
+    // Route directly to destination (bypass _master's 0.14 reduction)
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.001, t);
+    gain.gain.linearRampToValueAtTime(0.38, t + dur * 0.45);
+    gain.gain.linearRampToValueAtTime(0.001, t + dur);
+    src.connect(filt); filt.connect(gain); gain.connect(ctx.destination);
+    src.start(t); src.stop(t + dur + 0.05);
+  }
+  playBreathOut() {
+    if (!this._ctx || this._muted) return;
+    const ctx = this._ctx, t = ctx.currentTime;
+    const dur = 3.6;
+    const bufLen = Math.ceil(ctx.sampleRate * dur);
+    const buf = ctx.createBuffer(1, bufLen, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < bufLen; i++) d[i] = Math.random() * 2 - 1;
+    const src = ctx.createBufferSource(); src.buffer = buf;
+    // Lowpass cutoff falls — "closing airway" as you exhale
+    const filt = ctx.createBiquadFilter(); filt.type = 'lowpass';
+    filt.frequency.setValueAtTime(2400, t);
+    filt.frequency.linearRampToValueAtTime(280, t + dur * 0.90);
+    filt.Q.value = 0.6;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.35, t);
+    gain.gain.linearRampToValueAtTime(0.35, t + dur * 0.25);
+    gain.gain.linearRampToValueAtTime(0.001, t + dur);
+    src.connect(filt); filt.connect(gain); gain.connect(ctx.destination);
+    src.start(t); src.stop(t + dur + 0.05);
+  }
+  playJingle() {
+    if (!this._ctx) return;
+    const ctx = this._ctx, t = ctx.currentTime;
+    [523, 659, 784, 1047].forEach((f, i) => {
+      const osc = ctx.createOscillator(), env = ctx.createGain();
+      osc.type = 'triangle'; osc.frequency.value = f;
+      env.gain.setValueAtTime(this._muted ? 0 : 0.28, t + i * 0.13);
+      env.gain.exponentialRampToValueAtTime(0.001, t + i * 0.13 + 0.44);
+      osc.connect(env); env.connect(this._master);
+      osc.start(t + i * 0.13); osc.stop(t + i * 0.13 + 0.46);
+    });
+  }
+  playFootstep(biome) {
+    if (!this._ctx || this._muted) return;
+    const ctx = this._ctx, t = ctx.currentTime;
+    const len = Math.ceil(ctx.sampleRate * 0.07);
+    const buf = ctx.createBuffer(1, len, ctx.sampleRate);
+    const d = buf.getChannelData(0);
+    for (let i = 0; i < len; i++) d[i] = (Math.random() * 2 - 1) * (1 - i / len) * 0.5;
+    const src  = ctx.createBufferSource(); src.buffer = buf;
+    const filt = ctx.createBiquadFilter();
+    filt.type = 'bandpass';
+    filt.frequency.value = biome === 'volcano' ? 260 : biome === 'valley' ? 380 : 320;
+    filt.Q.value = 0.7;
+    const gain = ctx.createGain();
+    gain.gain.setValueAtTime(0.055, t);
+    gain.gain.exponentialRampToValueAtTime(0.001, t + 0.09);
+    src.connect(filt); filt.connect(gain); gain.connect(this._master);
+    src.start(t); src.stop(t + 0.1);
+  }
+  setAmbient(biome) {
+    if (biome === this._ambientBiome || !this._ctx) return;
+    this._ambientBiome = biome;
+    if (this._ambientGain) {
+      const old = this._ambientGain, oscs = this._ambientOscs.slice();
+      old.gain.setTargetAtTime(0, this._ctx.currentTime, 0.8);
+      setTimeout(() => oscs.forEach(o => { try { o.stop(); } catch(e) {} }), 3000);
+    }
+    this._ambientGain = null; this._ambientOscs = [];
+    if (!biome || biome === 'center' || biome === 'lava') return;
+    const ctx = this._ctx;
+    const ag = ctx.createGain();
+    ag.gain.setValueAtTime(0, ctx.currentTime);
+    ag.gain.setTargetAtTime(this._muted ? 0 : 0.035, ctx.currentTime, 1.8);
+    ag.connect(ctx.destination);
+    this._ambientGain = ag;
+    if (biome === 'volcano') {
+      [55, 82, 110].forEach(freq => {
+        const o = ctx.createOscillator(); o.type = 'sawtooth'; o.frequency.value = freq;
+        const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 160;
+        o.connect(f); f.connect(ag); o.start(); this._ambientOscs.push(o);
+      });
+    } else if (biome === 'marsh') {
+      // Soft wind noise: looping white-noise buffer through a low-pass filter
+      const bufSec = 2, sr = ctx.sampleRate;
+      const buf = ctx.createBuffer(1, bufSec * sr, sr);
+      const d = buf.getChannelData(0);
+      for (let i = 0; i < d.length; i++) d[i] = Math.random() * 2 - 1;
+      const src = ctx.createBufferSource(); src.buffer = buf; src.loop = true;
+      const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 420; f.Q.value = 0.5;
+      src.connect(f); f.connect(ag); src.start();
+      // Store a fake "oscillator-like" object so the stop() call in setAmbient works
+      this._ambientOscs.push({ stop: () => src.stop() });
+    } else if (biome === 'valley') {
+      [130, 196].forEach(freq => {
+        const o = ctx.createOscillator(); o.type = 'sine'; o.frequency.value = freq;
+        const f = ctx.createBiquadFilter(); f.type = 'lowpass'; f.frequency.value = 340;
+        o.connect(f); f.connect(ag); o.start(); this._ambientOscs.push(o);
+      });
+    }
+  }
+  _loop(name, id, startAt) {
+    if (id !== this._seqId || !this._ctx) return;
+    const theme = MUSIC_THEMES[name];
+    if (!theme) return;
+    const ctx  = this._ctx;
+    const spb  = 60 / theme.bpm;          // seconds per beat
+    const types = ['square','square','triangle'];
+    const vols  = [0.38, 0.16, 0.26];
+    let loopBeats = 0;
+    theme.voices.forEach((notes, vi) => {
+      let t = startAt, beats = 0;
+      notes.forEach(([freq, dur]) => {
+        const d = dur * spb;
+        if (freq > 0) {
+          const osc = ctx.createOscillator();
+          const env = ctx.createGain();
+          osc.type = types[vi] || 'square';
+          osc.frequency.value = freq;
+          const vol = vols[vi] ?? 0.2;
+          env.gain.setValueAtTime(vol, t);
+          env.gain.exponentialRampToValueAtTime(vol * 0.015, t + d * 0.80);
+          osc.connect(env); env.connect(this._master);
+          osc.start(t); osc.stop(t + d * 0.92);
+        }
+        t += d; beats += dur;
+      });
+      loopBeats = Math.max(loopBeats, beats);
+    });
+    const nextStart = startAt + loopBeats * spb;
+    const delay = (nextStart - ctx.currentTime - 0.06) * 1000;
+    setTimeout(() => this._loop(name, id, nextStart), Math.max(delay, 50));
+  }
+}
+
+/* ================================================================
+   MAIN — scene, renderer, lights, game loop
+================================================================ */
+const canvas   = document.getElementById('game-canvas');
+const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.shadowMap.enabled    = true;
+renderer.shadowMap.type       = THREE.PCFSoftShadowMap;
+renderer.toneMapping          = THREE.LinearToneMapping;
+renderer.toneMappingExposure  = 1.6;
+
+const scene  = new THREE.Scene();
+scene.background = new THREE.Color(0x87CEEB);
+scene.fog        = new THREE.FogExp2(0x87CEEB, 0.007);
+
+const camera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 400);
+camera.position.set(0, 8, 14);
+
+const clock = new THREE.Clock();
+
+const ambientLight = new THREE.AmbientLight(0xFFFFFF, 0.8);
+scene.add(ambientLight);
+const hemiLight = new THREE.HemisphereLight(0xC8E8FF, 0x6AAA50, 0.4);
+scene.add(hemiLight);
+const sun = new THREE.DirectionalLight(0xFFFFFF, 0.9);
+sun.position.set(40, 60, 20);
+sun.castShadow = true;
+sun.shadow.mapSize.set(1024, 1024);
+sun.shadow.camera.left   = -100; sun.shadow.camera.right = 100;
+sun.shadow.camera.top    =  100; sun.shadow.camera.bottom = -100;
+sun.shadow.camera.far    =  200;
+scene.add(sun);
+// Fill light from front-left
+const fill = new THREE.DirectionalLight(0xCCDDFF, 0.4);
+fill.position.set(-20, 25, 40);
+scene.add(fill);
+// Camera headlight — moves with the camera, always illuminates whatever is in view
+const headLight = new THREE.DirectionalLight(0xFFFFFF, 0.5);
+camera.add(headLight);
+headLight.position.set(0, 2, 4);   // slightly above and in front of lens
+scene.add(camera);                  // camera must be in scene for its children to work
+
+const musicSystem = new MusicSystem();
+// Start audio on first user gesture (browser autoplay policy requires this)
+{
+  const _startAudio = () => {
+    musicSystem.start();
+    window.removeEventListener('keydown', _startAudio, true);
+    window.removeEventListener('mousedown', _startAudio, true);
+  };
+  window.addEventListener('keydown',  _startAudio, true);
+  window.addEventListener('mousedown', _startAudio, true);
+}
+
+const gameManager    = new GameManager(scene);
+const dialogueSystem = new DialogueSystem();
+let player, world, gameActive = false;
+let playerLight;
+
+function initGame() {
+  player = new Player(scene);   // GLB loads async; placeholder mesh is live immediately
+  // A point light that orbits just above the player — keeps the character well-lit at all times
+  playerLight = new THREE.PointLight(0xFFEECC, 1.5, 14);
+  scene.add(playerLight);
+  world  = new World(scene, gameManager, dialogueSystem, (n) => {
+    gameActive = false;
+    world._playEndingScene(() => showReflection(n));
+  });
+}
+
+const keys = {};
+document.addEventListener('keydown', e => {
+  if (e.code === 'Space') e.preventDefault();
+  keys[e.code] = true;
+  if (e.code === 'KeyE' && gameActive) {
+    if (world && world._wisdomActive) {
+      // E also closes the wisdom overlay
+      document.getElementById('wisdom-overlay').style.display = 'none';
+      world._wisdomActive = false;
+    } else if (!dialogueSystem.active) {
+      world.tryInteract(player);
+    }
+  }
+  // +/- keys adjust ambient light and scale all other non-emissive lights proportionally
+  const _BASE = { ambient: 0.8, hemi: 0.4, sun: 0.9, fill: 0.4, head: 0.5 };
+  if (e.code === 'Equal' || e.code === 'NumpadAdd') {
+    ambientLight.intensity = Math.min(4.0, +(ambientLight.intensity + 0.2).toFixed(1));
+    const t = ambientLight.intensity / _BASE.ambient;
+    hemiLight.intensity = _BASE.hemi * t; sun.intensity = _BASE.sun * t;
+    fill.intensity = _BASE.fill * t; headLight.intensity = _BASE.head * t;
+    showToast('💡 Light: ' + ambientLight.intensity.toFixed(1));
+  }
+  if (e.code === 'Minus' || e.code === 'NumpadSubtract') {
+    ambientLight.intensity = Math.max(0.0, +(ambientLight.intensity - 0.2).toFixed(1));
+    const t = ambientLight.intensity / _BASE.ambient;
+    hemiLight.intensity = _BASE.hemi * t; sun.intensity = _BASE.sun * t;
+    fill.intensity = _BASE.fill * t; headLight.intensity = _BASE.head * t;
+    showToast('💡 Light: ' + ambientLight.intensity.toFixed(1));
+  }
+});
+document.addEventListener('keyup', e => {
+  keys[e.code] = false;
+  if (e.code === 'Space' && player && player.isBreathing)
+    player.cancelBreathing();
+});
+window.addEventListener('resize', () => {
+  renderer.setSize(window.innerWidth, window.innerHeight);
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+});
+
+// ── Mouse orbit: drag to rotate camera, scroll to zoom ─────────
+let _drag = false, _lastMX = 0, _lastMY = 0;
+window.addEventListener('mousedown', e => {
+  // Don't steal clicks from overlay UI buttons
+  if (e.target.closest('#dialogue-overlay, #social-story-overlay, #reflection-overlay')) return;
+  if (e.target.tagName === 'BUTTON' || e.target.tagName === 'KBD') return;
+  _drag = true; _lastMX = e.clientX; _lastMY = e.clientY;
+});
+window.addEventListener('mouseup',    ()  => { _drag = false; });
+window.addEventListener('mouseleave', ()  => { _drag = false; });
+window.addEventListener('mousemove',  e  => {
+  if (!_drag) return;
+  cameraYaw   -= (e.clientX - _lastMX) * 0.006;
+  cameraPitch  = Math.max(CAM_PITCH_MIN, Math.min(CAM_PITCH_MAX,
+                  cameraPitch + (e.clientY - _lastMY) * 0.005));
+  _lastMX = e.clientX; _lastMY = e.clientY;
+});
+window.addEventListener('wheel', e => {
+  cameraDist = Math.max(CAM_DIST_MIN, Math.min(CAM_DIST_MAX, cameraDist + e.deltaY * 0.025));
+}, { passive: true });
+window.addEventListener('contextmenu', e => e.preventDefault());
+
+document.getElementById('mute-btn').addEventListener('click', () => {
+  const muted = musicSystem.toggleMute();
+  document.getElementById('mute-btn').innerHTML = muted ? '&#x1F507;' : '&#x1F50A;';
+});
+
+const _camOff = new THREE.Vector3();
+const _camTgt = new THREE.Vector3();
+const _lookAt = new THREE.Vector3();
+function updateCamera(delta) {
+  // Roblox-style orbit: spherical coords around player
+  const cx = player.mesh.position.x;
+  const cy = player.mesh.position.y + 1.1;   // pivot at chest height
+  const cz = player.mesh.position.z;
+  const ox = cameraDist * Math.sin(cameraYaw)   * Math.cos(cameraPitch);
+  const oy = cameraDist * Math.sin(cameraPitch);
+  const oz = cameraDist * Math.cos(cameraYaw)   * Math.cos(cameraPitch);
+  _camTgt.set(cx + ox, cy + oy, cz + oz);
+  camera.position.lerp(_camTgt, Math.min(1, 8 * delta));
+  _lookAt.set(cx, cy, cz);
+  camera.lookAt(_lookAt);
+}
+
+function animate() {
+  requestAnimationFrame(animate);
+  const delta = Math.min(clock.getDelta(), 0.04);
+  if (gameActive) {
+    // Keep the follow light above the player so the model is always well-lit
+    playerLight.position.set(
+      player.mesh.position.x,
+      player.mesh.position.y + 4,
+      player.mesh.position.z
+    );
+    if (keys['Space'] && !dialogueSystem.active) player.startBreathing(scene);
+    if (!dialogueSystem.active) {
+      player.update(delta, keys, gameManager, scene, world);
+      world.update(delta, player);
+    } else {
+      world.spinCrystals(delta);
+      world._animateMagicalStones(delta);
+      // Keep wisp lights pulsing even while frozen
+      if (world._playerHitCooldown > 0) world._playerHitCooldown -= delta;
+      world._updateWisps(delta, player, true /* frozen = anyInteracting=true */);
+    }
+    updateCamera(delta);
+    gameManager.update(delta, camera);
+  }
+  renderer.render(scene, camera);
+}
+
+initGame();
+animate();
+
+const story = new SocialStory(() => {
+  gameActive = true;
+  gameManager.updateUI();
+  player.spawnDrop(7);   // drop from top of portal to ground
+  showToast('🗺️ Use WASD to explore. Press E near feeling elements to help them!');
+});
+story.start();
+  </script>
+</body>
+</html>
