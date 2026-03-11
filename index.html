@@ -46,7 +46,10 @@
     <kbd>Mouse drag</kbd> Camera &nbsp;|&nbsp;
     <kbd>Scroll</kbd> Zoom &nbsp;|&nbsp;
     <kbd>SPACE</kbd> Breathe &nbsp;|&nbsp;
-    <kbd>E</kbd> Talk
+    <kbd>E</kbd> Talk &nbsp;|&nbsp;
+    <kbd>Q</kbd> Use Tool &nbsp;|&nbsp;
+    <kbd>I</kbd> Inventory &nbsp;|&nbsp;
+    <kbd>R</kbd> Potion
   </div>
 
   <!-- ===== BREATHING INDICATOR (center) ===== -->
@@ -115,6 +118,83 @@
         <blockquote id="wisdom-quote"></blockquote>
         <button id="wisdom-close">✨ Carry this wisdom</button>
       </div>
+    </div>
+  </div>
+
+  <!-- ===== PORTAL FLASH (full-screen teal flash on shrine entry) ===== -->
+  <div id="portal-flash"></div>
+
+  <!-- ===== TOOL SHRINE OVERLAY ===== -->
+  <div id="shrine-overlay" style="display:none">
+    <div id="shrine-box">
+      <div id="shrine-box-icon">🌟</div>
+      <h2 id="shrine-box-title">✨ Calm Zone Sanctum</h2>
+      <p id="shrine-box-desc">Guardian Tools wait here — claim them and carry them into battle against the Feeling-Spirits.</p>
+      <div id="shrine-tool-cards"></div>
+      <button id="shrine-return-btn">Return to World →</button>
+    </div>
+  </div>
+
+  <!-- ===== INVENTORY OVERLAY ===== -->
+  <div id="inventory-overlay" style="display:none">
+    <div id="inventory-box">
+      <h2>🎒 Guardian's Pack</h2>
+      <p id="inventory-hint">Press <kbd>Q</kbd> to use your equipped tool near a Feeling-Spirit &nbsp;|&nbsp; <kbd>R</kbd> to use a potion</p>
+      <div id="inventory-tool-cards"></div>
+      <!-- GLB 3D preview of equipped tool -->
+      <div id="inventory-glb-row" style="display:none">
+        <p style="font-size:0.78rem;color:var(--text-dim);text-align:center;margin-bottom:4px">Equipped — 3D preview</p>
+        <canvas id="inv-glb-canvas" width="200" height="160" style="border-radius:12px;border:1px solid rgba(45,212,191,0.3);display:block;margin:0 auto"></canvas>
+      </div>
+      <div id="inventory-potion-row" style="display:none">
+        <span>🧪</span><span id="inventory-potion-count">0</span><span>&nbsp;Emotion Potion(s) — press <kbd>R</kbd> to use</span>
+      </div>
+      <button id="inventory-close-btn">Close &nbsp;[I]</button>
+    </div>
+  </div>
+
+  <!-- ===== MINI-GAME ZONE ===== -->
+  <div id="minigame-overlay" style="display:none">
+    <div id="minigame-box">
+      <div id="mg-header">
+        <div id="mg-icon"></div>
+        <div>
+          <h2 id="mg-title"></h2>
+          <p id="mg-subtitle"></p>
+        </div>
+      </div>
+      <p id="mg-instruction"></p>
+      <!-- Zen Sand Garden -->
+      <div id="mg-sand" style="display:none">
+        <canvas id="mg-sand-canvas" width="480" height="260"></canvas>
+        <div id="mg-sand-progress"><div id="mg-sand-fill"></div></div>
+        <p id="mg-sand-msg">Follow the glowing dot with your mouse to trace the pattern</p>
+      </div>
+      <!-- Breath Sync -->
+      <div id="mg-breath" style="display:none">
+        <div id="mg-breath-ring-wrap"><div id="mg-breath-ring"></div><div id="mg-breath-label">Get Ready…</div></div>
+        <div id="mg-breath-beats">
+          <button class="mg-beat-btn" data-phase="in">🌬️ IN</button>
+          <button class="mg-beat-btn" data-phase="hold">✋ HOLD</button>
+          <button class="mg-beat-btn" data-phase="out">💨 OUT</button>
+        </div>
+        <div id="mg-breath-score">Syncs: <span id="mg-breath-count">0</span> / 3</div>
+      </div>
+      <!-- Mirror Puzzle -->
+      <div id="mg-mirror" style="display:none">
+        <canvas id="mg-mirror-canvas" width="480" height="260"></canvas>
+        <p id="mg-mirror-msg">Rotate the mirrors to bounce the light beam onto all 3 targets!</p>
+        <div style="display:flex;gap:10px;justify-content:center;margin-top:6px">
+          <button class="mg-mirror-btn" data-dir="left">↺ Rotate Left</button>
+          <button class="mg-mirror-btn" data-dir="right">↻ Rotate Right</button>
+        </div>
+      </div>
+      <div id="mg-result" style="display:none">
+        <div id="mg-result-icon"></div>
+        <p id="mg-result-msg"></p>
+        <button id="mg-result-btn"></button>
+      </div>
+      <button id="mg-quit-btn">✕ Leave Sanctum</button>
     </div>
   </div>
 
@@ -969,6 +1049,636 @@ const WISP_DEFS = [
   },
 ];
 
+/* ================================================================
+   TOOL DEFINITIONS — Calm Zone Guardian Tools
+================================================================ */
+const TOOL_DEFS = [
+  {
+    id: 'wand', name: 'Validation Wand', icon: '\uD83E\uDE84',
+    color: '#22C55E', emissiveHex: 0x22C55E, glowHex: 0x16A34A,
+    shrinePos: [-8, 0, 11],
+    desc: 'Names emotions from a safe distance so they lose their power.',
+    effect: '\u2728 Push an Anger Wisp away \u2022 Block next regulation drop (6 s)',
+    lore: '\u201cSeeing a feeling clearly is the first step to calming it.\u201d',
+  },
+  {
+    id: 'blade', name: 'Boundary Blade', icon: '\u2694\uFE0F',
+    color: '#67E8F9', emissiveHex: 0x67E8F9, glowHex: 0x0891B2,
+    shrinePos: [8, 0, 11],
+    desc: 'Sets healthy personal space and restores your regulation level.',
+    effect: '\uD83C\uDF0A Repel any Wisp far back \u2022 Restore one regulation level',
+    lore: '\u201cYour boundaries keep your calm zone safe.\u201d',
+  },
+  {
+    id: 'mirror', name: 'Perspective Mirror', icon: '\uD83E\uDEDE',
+    color: '#C084FC', emissiveHex: 0xC084FC, glowHex: 0x7C3AED,
+    shrinePos: [0, 0, 14],
+    desc: 'Reflects a Worry Wisp\u2019s energy back as a brave True Thought.',
+    effect: '\uD83D\uDC9C Calm an Anxiety Wisp \u2022 Drop an Emotion Potion to collect',
+    lore: '\u201cChanging how you see a fear changes how big it feels.\u201d',
+  },
+];
+
+/* ================================================================
+   INVENTORY SYSTEM — tools, potions, HUD rows & overlays
+================================================================ */
+class InventorySystem {
+  constructor() {
+    this.tools        = new Set(); // claimed tool ids
+    this.equipped     = null;      // currently equipped tool id
+    this.potions      = 0;
+    this._toolCD      = 0;         // seconds until tool can be used again
+    this._shieldTimer = 0;         // wand shield active seconds
+    this._active      = false;     // inventory overlay open?
+    this._equippedRow = null;
+    this._potionRow   = null;
+    this._buildHUD();
+    document.getElementById('inventory-close-btn').addEventListener('click', () => this.closeInventory());
+  }
+
+  _buildHUD() {
+    const row = document.createElement('div');
+    row.id = 'equipped-tool-row'; row.style.display = 'none';
+    row.innerHTML = '<span id="etool-icon" style="font-size:1.1rem"></span>'
+      + '<span id="etool-name" style="flex:1"></span>'
+      + '<span style="opacity:0.5;font-size:0.72rem">Q:use</span>';
+    document.getElementById('hud').appendChild(row);
+    this._equippedRow = row;
+
+    const pr = document.createElement('div');
+    pr.id = 'potion-row'; pr.style.display = 'none';
+    pr.innerHTML = '\uD83E\uDDEA <span id="hud-potion-count">0</span> potion(s) \u2014 R:use';
+    document.getElementById('hud').appendChild(pr);
+    this._potionRow = pr;
+  }
+
+  openInventory() {
+    if (this._active) return;
+    this._active = true;
+    this._renderInventoryCards();
+    document.getElementById('inventory-overlay').style.display = 'flex';
+  }
+  closeInventory() {
+    this._active = false;
+    document.getElementById('inventory-overlay').style.display = 'none';
+  }
+
+  _renderInventoryCards() {
+    const grid = document.getElementById('inventory-tool-cards');
+    grid.innerHTML = '';
+    if (this.tools.size === 0) {
+      grid.innerHTML = '<p style="color:#64748B;font-size:0.9rem;text-align:center;padding:18px">No tools yet \u2014 find the glowing shrines in the Calm Zone!</p>';
+    } else {
+      TOOL_DEFS.forEach(def => {
+        if (!this.tools.has(def.id)) return;
+        const eq = this.equipped === def.id;
+        const card = document.createElement('div');
+        card.className = 'shrine-tool-card' + (eq ? ' equipped' : '');
+        card.style.borderColor = def.color + (eq ? 'cc' : '55');
+        card.innerHTML = '<div class="shrine-tool-icon">' + def.icon + '</div>'
+          + '<div class="shrine-tool-name" style="color:' + def.color + '">' + def.name + '</div>'
+          + '<div class="shrine-tool-effect">' + def.effect + '</div>'
+          + '<div class="shrine-tool-lore">' + def.lore + '</div>';
+        if (eq) {
+          const tag = document.createElement('div');
+          tag.style.cssText = 'font-size:0.76rem;color:var(--teal);font-weight:700;padding:3px 0';
+          tag.textContent = '\u2713 Equipped';
+          card.appendChild(tag);
+        } else {
+          const btn = document.createElement('button');
+          btn.className = 'shrine-equip-btn';
+          btn.textContent = 'Equip \u2192';
+          btn.addEventListener('click', () => {
+            this.equipTool(def.id);
+            this._renderInventoryCards();
+            showToast(def.icon + ' ' + def.name + ' equipped! Press Q to use it.');
+          });
+          card.appendChild(btn);
+        }
+        grid.appendChild(card);
+      });
+    }
+    const pr = document.getElementById('inventory-potion-row');
+    document.getElementById('inventory-potion-count').textContent = this.potions;
+    pr.style.display = this.potions > 0 ? 'flex' : 'none';
+  }
+
+  collectTool(id) {
+    const isNew = !this.tools.has(id);
+    this.tools.add(id);
+    if (!this.equipped) this.equipped = id;
+    this._updateHUD();
+    return isNew;
+  }
+  equipTool(id) {
+    if (!this.tools.has(id)) return;
+    this.equipped = id;
+    this._updateHUD();
+  }
+  collectPotion() {
+    this.potions++;
+    this._updateHUD();
+    showToast('\uD83E\uDDEA Emotion Potion collected! (' + this.potions + ') \u2014 Press R to use it.');
+  }
+  usePotion(gm) {
+    if (this.potions <= 0) { showToast('\uD83D\uDC94 No potions left! Use the Mirror on Anxiety Wisps to find more.'); return false; }
+    if (gm.state === 'GREEN') { showToast('\uD83D\uDC9A Already calm \u2014 save your potion!'); return false; }
+    this.potions--;
+    if      (gm.state === 'RED')    gm.setState('YELLOW');
+    else if (gm.state === 'YELLOW') gm.setState('GREEN');
+    this._updateHUD();
+    showToast('\u2728 Emotion Potion used! A wave of calm washes over you.');
+    return true;
+  }
+  isShielded() { return this._shieldTimer > 0; }
+  update(delta) {
+    if (this._toolCD      > 0) this._toolCD      -= delta;
+    if (this._shieldTimer > 0) this._shieldTimer -= delta;
+  }
+  _updateHUD() {
+    const tool = this.equipped ? TOOL_DEFS.find(t => t.id === this.equipped) : null;
+    if (tool) {
+      this._equippedRow.style.display = 'flex';
+      document.getElementById('etool-icon').textContent = tool.icon;
+      document.getElementById('etool-name').textContent = tool.name;
+    } else {
+      this._equippedRow.style.display = 'none';
+    }
+    if (this.potions > 0) {
+      this._potionRow.style.display = 'flex';
+      document.getElementById('hud-potion-count').textContent = this.potions;
+    } else {
+      this._potionRow.style.display = 'none';
+    }
+  }
+  useTool(world, player, gm) {
+    if (!this.equipped) { showToast('\uD83D\uDCE6 Visit a glowing shrine in the Calm Zone to get tools!'); return false; }
+    if (this._toolCD > 0) {
+      showToast('\u23F3 ' + TOOL_DEFS.find(t => t.id === this.equipped).name
+        + ' recharging\u2026 (' + Math.ceil(this._toolCD) + 's)'); return false;
+    }
+    const RANGE = 7;
+    let nearest = null, nearestDist = Infinity;
+    world.wisps.forEach(w => {
+      if (!w.active) return;
+      const d = Math.hypot(w.mesh.position.x - player.mesh.position.x, w.mesh.position.z - player.mesh.position.z);
+      if (d < RANGE && d < nearestDist) { nearest = w; nearestDist = d; }
+    });
+    if (!nearest) { showToast('\uD83D\uDD0D No feeling-spirit nearby (within ' + RANGE + ' units). Get closer!'); return false; }
+
+    const angle = Math.atan2(
+      nearest.mesh.position.z - player.mesh.position.z,
+      nearest.mesh.position.x - player.mesh.position.x
+    );
+    const tool = TOOL_DEFS.find(t => t.id === this.equipped);
+
+    if (this.equipped === 'wand') {
+      nearest.mesh.position.x += Math.cos(angle) * 10;
+      nearest.mesh.position.z += Math.sin(angle) * 10;
+      nearest.velX = Math.cos(angle) * 2; nearest.velZ = Math.sin(angle) * 2;
+      this._shieldTimer = 6;
+      world._playerHitCooldown = Math.max(world._playerHitCooldown, 6);
+      showToast('\uD83E\uDE84 Validation Wand! You named the feeling \u2014 it backed away!\n\u201cI see you. You don\u2019t control me.\u201d');
+    } else if (this.equipped === 'blade') {
+      const b = nearest.def.bounds;
+      const nx = Math.max(b.xMin + 2, Math.min(b.xMax - 2, nearest.mesh.position.x + Math.cos(angle) * 18));
+      const nz = Math.max(b.zMin + 2, Math.min(b.zMax - 2, nearest.mesh.position.z + Math.sin(angle) * 18));
+      nearest.mesh.position.x = nx; nearest.mesh.position.z = nz;
+      nearest.velX = Math.cos(angle) * 1; nearest.velZ = Math.sin(angle) * 1;
+      world._playerHitCooldown = Math.max(world._playerHitCooldown, 10);
+      if      (gm.state === 'RED')    gm.setState('YELLOW');
+      else if (gm.state === 'YELLOW') gm.setState('GREEN');
+      showToast('\u2694\uFE0F Boundary Blade! You set a firm limit and the feeling retreated!\n\u201cThis is my space. I choose how I respond.\u201d');
+    } else if (this.equipped === 'mirror') {
+      world._spawnPotion(nearest.mesh.position.x, nearest.def.height * 0.4, nearest.mesh.position.z);
+      nearest.active = false; nearest.respawnTimer = 90; nearest.mesh.visible = false;
+      showToast('\uD83E\uDEDE Perspective Mirror! You reflected the fear as truth!\n\u201cThis worry is not real right now. I am safe.\u201d \u2014 An Emotion Potion dropped!');
+    }
+    this._toolCD = 8;
+    const cv = document.getElementById('game-canvas');
+    cv.style.filter = 'brightness(2) saturate(1.5)';
+    setTimeout(() => { cv.style.filter = ''; }, 200);
+    return true;
+  }
+}
+
+/* ================================================================
+   MINI-GAME SYSTEM — three sanctum challenges
+================================================================ */
+class MiniGameSystem {
+  constructor() {
+    this._overlay  = document.getElementById('minigame-overlay');
+    this._active   = false;
+    this._world    = null;
+    this._toolId   = null;
+    this._cleanup  = null;
+
+    document.getElementById('mg-quit-btn').addEventListener('click', () => this._quit());
+    document.getElementById('mg-result-btn').addEventListener('click', () => this._onResultBtn());
+  }
+
+  open(toolId, world) {
+    if (this._active) return;
+    this._active = true;
+    this._world  = world;
+    this._toolId = toolId;
+    world._minigameActive = true;
+
+    const def = TOOL_DEFS.find(t => t.id === toolId);
+    document.getElementById('mg-icon').textContent     = def.icon;
+    document.getElementById('mg-title').textContent    = def.name + ' Sanctum';
+    document.getElementById('mg-subtitle').textContent = def.lore;
+
+    // hide all game panels + result
+    ['mg-sand','mg-breath','mg-mirror','mg-result'].forEach(id =>
+      document.getElementById(id).style.display = 'none');
+    document.getElementById('mg-quit-btn').style.display = 'block';
+
+    const flash = document.getElementById('portal-flash');
+    flash.classList.add('flash');
+    flash.addEventListener('animationend', () => flash.classList.remove('flash'), { once: true });
+
+    setTimeout(() => {
+      this._overlay.style.display = 'flex';
+      if      (toolId === 'wand')   this._startSand(def);
+      else if (toolId === 'blade')  this._startBreath(def);
+      else if (toolId === 'mirror') this._startMirror(def);
+    }, 420);
+  }
+
+  _quit() {
+    if (this._cleanup) { this._cleanup(); this._cleanup = null; }
+    this._overlay.style.display = 'none';
+    this._active = false;
+    if (this._world) this._world._minigameActive = false;
+  }
+
+  _showResult(won, toolId) {
+    if (this._cleanup) { this._cleanup(); this._cleanup = null; }
+    ['mg-sand','mg-breath','mg-mirror'].forEach(id =>
+      document.getElementById(id).style.display = 'none');
+    document.getElementById('mg-quit-btn').style.display = 'none';
+    const def = TOOL_DEFS.find(t => t.id === toolId);
+    const result = document.getElementById('mg-result');
+    document.getElementById('mg-result-icon').textContent = won ? '🏆' : '💙';
+    document.getElementById('mg-result-msg').innerHTML = won
+      ? '<strong style="color:var(--teal)">' + def.icon + ' ' + def.name + ' earned!</strong><br>'
+        + def.lore + '<br><br><span style="color:#94A3B8;font-size:0.85rem">'
+        + def.effect + '</span>'
+      : 'Keep practising, Guardian. Every attempt makes you stronger.<br>'
+        + '<span style="color:#94A3B8;font-size:0.85rem">Try again to earn the ' + def.name + '.</span>';
+    const btn = document.getElementById('mg-result-btn');
+    btn.textContent = won ? def.icon + ' Claim & Return to World' : '🔄 Try Again';
+    btn.dataset.won = won ? '1' : '0';
+    btn.dataset.toolId = toolId;
+    result.style.display = 'flex';
+
+    if (won) {
+      inventorySystem.collectTool(toolId);
+      musicSystem.playJingle();
+    }
+  }
+
+  _onResultBtn() {
+    const btn = document.getElementById('mg-result-btn');
+    if (btn.dataset.won === '1') {
+      this._quit();
+    } else {
+      // retry
+      const toolId = btn.dataset.toolId;
+      document.getElementById('mg-result').style.display = 'none';
+      document.getElementById('mg-quit-btn').style.display = 'block';
+      const def = TOOL_DEFS.find(t => t.id === toolId);
+      if      (toolId === 'wand')   this._startSand(def);
+      else if (toolId === 'blade')  this._startBreath(def);
+      else if (toolId === 'mirror') this._startMirror(def);
+    }
+  }
+
+  // ── GAME 1: Zen Sand-Drawing Garden (Wand) ─────────────────────
+  _startSand(def) {
+    document.getElementById('mg-instruction').textContent =
+      'Trace the glowing pattern with your mouse. Fill the progress bar to earn the Validation Wand!';
+    const panel = document.getElementById('mg-sand');
+    panel.style.display = 'block';
+    document.getElementById('mg-sand-fill').style.width = '0%';
+    document.getElementById('mg-sand-msg').textContent = 'Follow the glowing dot with your mouse to trace the pattern';
+
+    const canvas = document.getElementById('mg-sand-canvas');
+    const ctx    = canvas.getContext('2d');
+    const W = canvas.width, H = canvas.height;
+
+    // Build a geometric path (star/spiral mix)
+    const pts = [];
+    const steps = 80;
+    for (let i = 0; i <= steps; i++) {
+      const t   = (i / steps) * Math.PI * 4;
+      const r   = 80 + 40 * Math.sin(t * 1.5);
+      pts.push({ x: W/2 + r * Math.cos(t), y: H/2 + r * Math.sin(t) });
+    }
+
+    let progress = 0, pointIdx = 0, drawing = false;
+    const CATCHR = 28;
+
+    const draw = () => {
+      ctx.clearRect(0, 0, W, H);
+      // Sand grid
+      ctx.fillStyle = '#0A1830';
+      ctx.fillRect(0, 0, W, H);
+      for (let x = 0; x < W; x += 14) {
+        for (let y = 0; y < H; y += 14) {
+          ctx.fillStyle = 'rgba(180,150,100,0.07)';
+          ctx.fillRect(x, y, 13, 13);
+        }
+      }
+      // Traced path so far
+      if (pointIdx > 1) {
+        ctx.beginPath();
+        ctx.moveTo(pts[0].x, pts[0].y);
+        for (let i = 1; i <= pointIdx; i++) ctx.lineTo(pts[i].x, pts[i].y);
+        ctx.strokeStyle = '#2DD4BF'; ctx.lineWidth = 3; ctx.globalAlpha = 0.7;
+        ctx.stroke(); ctx.globalAlpha = 1;
+      }
+      // Remaining dim path
+      ctx.beginPath();
+      ctx.moveTo(pts[pointIdx].x, pts[pointIdx].y);
+      for (let i = pointIdx + 1; i < pts.length; i++) ctx.lineTo(pts[i].x, pts[i].y);
+      ctx.strokeStyle = 'rgba(45,212,191,0.2)'; ctx.lineWidth = 2;
+      ctx.stroke();
+      // Glowing target dot
+      const gp = pts[Math.min(pointIdx, pts.length - 1)];
+      ctx.beginPath(); ctx.arc(gp.x, gp.y, 10, 0, Math.PI * 2);
+      ctx.fillStyle = '#2DD4BF'; ctx.shadowColor = '#2DD4BF'; ctx.shadowBlur = 18;
+      ctx.fill(); ctx.shadowBlur = 0;
+    };
+
+    const onMouseMove = (e) => {
+      if (!drawing) return;
+      const rect = canvas.getBoundingClientRect();
+      const sx = W / rect.width, sy = H / rect.height;
+      const mx = (e.clientX - rect.left) * sx;
+      const my = (e.clientY - rect.top)  * sy;
+      const next = pts[Math.min(pointIdx, pts.length - 1)];
+      if (Math.hypot(mx - next.x, my - next.y) < CATCHR) {
+        pointIdx = Math.min(pointIdx + 1, pts.length - 1);
+        progress = pointIdx / (pts.length - 1);
+        document.getElementById('mg-sand-fill').style.width = (progress * 100).toFixed(1) + '%';
+        if (progress >= 1) { cancelAnimationFrame(rafId); this._showResult(true, def.id); return; }
+      }
+      draw();
+    };
+    const onMD = () => { drawing = true; };
+    const onMU = () => { drawing = false; };
+    canvas.addEventListener('mousemove', onMouseMove);
+    canvas.addEventListener('mousedown', onMD);
+    canvas.addEventListener('mouseup', onMU);
+
+    let rafId;
+    const loop = () => { draw(); rafId = requestAnimationFrame(loop); };
+    rafId = requestAnimationFrame(loop);
+
+    this._cleanup = () => {
+      cancelAnimationFrame(rafId);
+      canvas.removeEventListener('mousemove', onMouseMove);
+      canvas.removeEventListener('mousedown', onMD);
+      canvas.removeEventListener('mouseup', onMU);
+    };
+  }
+
+  // ── GAME 2: Breath Sync Ritual (Blade) ─────────────────────────
+  _startBreath(def) {
+    document.getElementById('mg-instruction').textContent =
+      'Match the crystal\'s rhythm: press IN when it expands, HOLD at the peak, OUT when it shrinks. Sync 3 times to earn the Boundary Blade!';
+    const panel = document.getElementById('mg-breath');
+    panel.style.display = 'block';
+    document.getElementById('mg-breath-count').textContent = '0';
+
+    const ring  = document.getElementById('mg-breath-ring');
+    const label = document.getElementById('mg-breath-label');
+    const PHASES = ['in','hold','out'];
+    const LABELS = { in:'Breathe IN 🌬️', hold:'HOLD ✋', out:'Breathe OUT 💨' };
+    const DURATIONS = { in: 3500, hold: 1500, out: 3500 };
+    let phaseIdx = 0, syncs = 0, inputPhase = null, phaseTimer = null, running = true;
+
+    const setPhase = (p) => {
+      label.textContent = LABELS[p];
+      if (p === 'in')  { ring.classList.add('expand'); }
+      if (p === 'out') { ring.classList.remove('expand'); }
+    };
+
+    const btns = document.querySelectorAll('.mg-beat-btn');
+    btns.forEach(b => b.classList.remove('active'));
+
+    const nextPhase = () => {
+      if (!running) return;
+      phaseIdx = (phaseIdx + 1) % 3;
+      const p = PHASES[phaseIdx];
+      setPhase(p);
+      phaseTimer = setTimeout(nextPhase, DURATIONS[p]);
+    };
+    setPhase('in');
+    phaseTimer = setTimeout(nextPhase, DURATIONS['in']);
+
+    const onClick = (e) => {
+      const btn = e.currentTarget;
+      const phase = btn.dataset.phase;
+      const current = PHASES[phaseIdx];
+      btns.forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      setTimeout(() => btn.classList.remove('active'), 400);
+      if (phase === current) {
+        syncs++;
+        document.getElementById('mg-breath-count').textContent = syncs;
+        label.textContent = '✅ Synced!';
+        if (syncs >= 3) {
+          running = false; clearTimeout(phaseTimer);
+          this._showResult(true, def.id);
+        }
+      }
+    };
+    btns.forEach(b => b.addEventListener('click', onClick));
+
+    this._cleanup = () => {
+      running = false; clearTimeout(phaseTimer);
+      btns.forEach(b => b.removeEventListener('click', onClick));
+      ring.classList.remove('expand');
+    };
+  }
+
+  // ── GAME 3: Mirror Perspective Puzzle (Mirror) ─────────────────
+  _startMirror(def) {
+    document.getElementById('mg-instruction').textContent =
+      'Select a mirror and rotate it to bounce the light beam onto all 3 Sadness targets. Illuminate them all to earn the Perspective Mirror!';
+    const panel = document.getElementById('mg-mirror');
+    panel.style.display = 'block';
+    document.getElementById('mg-mirror-msg').textContent = 'Click a mirror to select it, then rotate with the buttons below.';
+
+    const canvas = document.getElementById('mg-mirror-canvas');
+    const ctx    = canvas.getContext('2d');
+    const W = canvas.width, H = canvas.height;
+
+    // Mirrors: {x, y, angle (radians)}
+    const mirrors = [
+      { x: 160, y: 140, angle: Math.PI / 4  },
+      { x: 300, y: 80,  angle: -Math.PI / 6 },
+      { x: 380, y: 190, angle: Math.PI / 3  },
+    ];
+    // Targets: {x, y, lit}
+    const targets = [
+      { x: 60,  y: 60,  lit: false },
+      { x: 440, y: 60,  lit: false },
+      { x: 260, y: 220, lit: false },
+    ];
+    const SOURCE = { x: 20, y: H / 2 };
+    let selected = 0;
+
+    const reflect = (dx, dy, mirAngle) => {
+      // Reflect direction vector across the mirror's normal
+      const nx = Math.cos(mirAngle + Math.PI / 2);
+      const ny = Math.sin(mirAngle + Math.PI / 2);
+      const dot = dx * nx + dy * ny;
+      return { dx: dx - 2 * dot * nx, dy: dy - 2 * dot * ny };
+    };
+
+    const raytrace = () => {
+      targets.forEach(t => t.lit = false);
+      let x = SOURCE.x, y = SOURCE.y;
+      let dx = 1, dy = 0;
+      const segs = [{ x, y }];
+      const MAX_BOUNCES = mirrors.length + 1;
+      const used = new Set();
+      for (let b = 0; b < MAX_BOUNCES; b++) {
+        let bestT = Infinity, bestM = -1;
+        mirrors.forEach((m, i) => {
+          if (used.has(i)) return;
+          const ex = m.x - x, ey = m.y - y;
+          const t = (ex * dx + ey * dy) / (dx * dx + dy * dy);
+          if (t > 0.1) {
+            const px = x + t * dx - m.x, py = y + t * dy - m.y;
+            if (Math.hypot(px, py) < 18 && t < bestT) { bestT = t; bestM = i; }
+          }
+        });
+        if (bestM === -1) {
+          // shoot to canvas edge
+          const tEdge = Math.min(
+            dx > 0 ? (W - x) / dx : dx < 0 ? -x / dx : Infinity,
+            dy > 0 ? (H - y) / dy : dy < 0 ? -y / dy : Infinity
+          );
+          const ex = x + tEdge * dx, ey = y + tEdge * dy;
+          segs.push({ x: ex, y: ey });
+          // check target hits
+          targets.forEach(t => {
+            // parameterise line for this segment and see if target is within 20px
+            const tx = t.x - x, ty = t.y - y;
+            const tp = tx * dx + ty * dy;
+            if (tp > 0) {
+              const perpDist = Math.abs(tx * dy - ty * dx);
+              if (perpDist < 20 && tp < tEdge + 5) t.lit = true;
+            }
+          });
+          break;
+        }
+        const m = mirrors[bestM];
+        x = x + bestT * dx; y = y + bestT * dy;
+        segs.push({ x, y });
+        const r = reflect(dx, dy, m.angle);
+        dx = r.dx; dy = r.dy;
+        used.add(bestM);
+      }
+      return segs;
+    };
+
+    const draw = () => {
+      ctx.clearRect(0, 0, W, H);
+      ctx.fillStyle = '#07050E'; ctx.fillRect(0, 0, W, H);
+
+      // Light beam
+      const segs = raytrace();
+      ctx.beginPath();
+      ctx.moveTo(segs[0].x, segs[0].y);
+      segs.forEach(s => ctx.lineTo(s.x, s.y));
+      ctx.strokeStyle = '#FFD700'; ctx.lineWidth = 2.5;
+      ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 12;
+      ctx.stroke(); ctx.shadowBlur = 0;
+
+      // Source
+      ctx.beginPath(); ctx.arc(SOURCE.x, SOURCE.y, 9, 0, Math.PI * 2);
+      ctx.fillStyle = '#FFD700'; ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 14;
+      ctx.fill(); ctx.shadowBlur = 0;
+
+      // Targets
+      targets.forEach((t, i) => {
+        ctx.beginPath(); ctx.arc(t.x, t.y, 14, 0, Math.PI * 2);
+        ctx.fillStyle   = t.lit ? '#22C55E' : '#1E2A4A';
+        ctx.strokeStyle = t.lit ? '#4ADE80' : '#3B82F6';
+        ctx.shadowColor = t.lit ? '#4ADE80' : '#3B82F6';
+        ctx.shadowBlur  = t.lit ? 18 : 5;
+        ctx.lineWidth = 2; ctx.fill(); ctx.stroke();
+        ctx.shadowBlur = 0;
+        ctx.fillStyle = t.lit ? '#fff' : '#60A5FA';
+        ctx.font = '11px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText('😢', t.x, t.y);
+      });
+
+      // Mirrors
+      mirrors.forEach((m, i) => {
+        const len = 28;
+        const mx0 = m.x - Math.cos(m.angle) * len, my0 = m.y - Math.sin(m.angle) * len;
+        const mx1 = m.x + Math.cos(m.angle) * len, my1 = m.y + Math.sin(m.angle) * len;
+        ctx.beginPath(); ctx.moveTo(mx0, my0); ctx.lineTo(mx1, my1);
+        ctx.strokeStyle = i === selected ? '#C084FC' : '#7C3AED';
+        ctx.lineWidth   = i === selected ? 5 : 3;
+        ctx.shadowColor = i === selected ? '#C084FC' : 'transparent';
+        ctx.shadowBlur  = i === selected ? 14 : 0;
+        ctx.stroke(); ctx.shadowBlur = 0;
+        // selection indicator
+        if (i === selected) {
+          ctx.beginPath(); ctx.arc(m.x, m.y, 15, 0, Math.PI * 2);
+          ctx.strokeStyle = '#C084FC'; ctx.lineWidth = 1.5;
+          ctx.setLineDash([4,3]); ctx.stroke(); ctx.setLineDash([]);
+        }
+      });
+
+      // Click to select mirror
+      ctx.fillStyle = 'rgba(255,255,255,0)'; // invisible overlay
+    };
+
+    // Click canvas to select nearest mirror
+    const onCanvasClick = (e) => {
+      const rect = canvas.getBoundingClientRect();
+      const sx = W / rect.width, sy = H / rect.height;
+      const mx = (e.clientX - rect.left) * sx, my = (e.clientY - rect.top) * sy;
+      let best = 0, bestD = Infinity;
+      mirrors.forEach((m, i) => {
+        const d = Math.hypot(mx - m.x, my - m.y);
+        if (d < bestD) { bestD = d; best = i; }
+      });
+      selected = best;
+      draw();
+    };
+    canvas.addEventListener('click', onCanvasClick);
+
+    const rotateBtns = document.querySelectorAll('.mg-mirror-btn');
+    const onRotate = (e) => {
+      const dir = e.currentTarget.dataset.dir;
+      mirrors[selected].angle += dir === 'left' ? -Math.PI / 12 : Math.PI / 12;
+      draw();
+      // Check win
+      if (targets.every(t => t.lit)) {
+        this._showResult(true, def.id);
+      }
+    };
+    rotateBtns.forEach(b => b.addEventListener('click', onRotate));
+
+    draw();
+
+    this._cleanup = () => {
+      canvas.removeEventListener('click', onCanvasClick);
+      rotateBtns.forEach(b => b.removeEventListener('click', onRotate));
+    };
+  }
+}
+
 class World {
   constructor(scene, gm, dlg, onQuestComplete) {
     this.scene           = scene;
@@ -984,7 +1694,12 @@ class World {
     this._tutorialShown = new Set();
     this._colliders = []; // {x, z, r} circles — player is pushed out of these
     this.magicalStones = []; // one per biome — ancient wisdom stones
-    this._wisdomActive = false;
+    this._wisdomActive  = false;
+    this.toolShrines   = [];   // Calm Zone sanctum shrines
+    this.potionItems   = [];   // collectible emotion potions
+    this._nearShrine   = null;
+    this._shrineActive = false;
+    this._minigameActive = false;
     this.wisps = [];        // roaming feeling-enemies
     this._playerHitCooldown = 0; // seconds until player can be hit again
     this._pedestalTopY = 0.4; // top surface height of the starting pedestal (cylinder fallback)
@@ -1007,6 +1722,7 @@ class World {
     // Pre-register feeling element positions so procedural placements (trees, stones) avoid them.
     // Crystals are intentionally NOT registered — the hero must be able to walk into them.
     FEELING_DATA.forEach(nd => this._colliders.push({ x: nd.pos[0], z: nd.pos[2], r: 2.5 }));
+    this._buildToolShrines(s);   // register shrine colliders BEFORE trees so trees avoid them
     this._addTrees(s);
     this._addMagicalStones(s);
     this._buildWisps(s);
@@ -1661,7 +2377,7 @@ class World {
     cr.light.intensity = 2.2;
   }
   tryInteract(player) {
-    if (this._wisdomActive) return;
+    if (this._wisdomActive || this._shrineActive || this._minigameActive) return;
     // Feeling elements take priority
     const fe = this.feelingElements.find(n => n.inRange && !n.solved);
     if (fe && !this.dlg.active) {
@@ -1686,6 +2402,12 @@ class World {
     if (stone && !this.dlg.active) {
       document.getElementById('interact-prompt').style.display = 'none';
       this._openWisdom(stone);
+      return;
+    }
+    // Tool shrines
+    if (this._nearShrine && !this.dlg.active) {
+      document.getElementById('interact-prompt').style.display = 'none';
+      this._openShrine(this._nearShrine);
     }
   }
   _checkCrystals(player) {
@@ -1746,6 +2468,14 @@ class World {
     } else if (biome === 'center' && !player.isBreathing) {
       this.gm.setState('GREEN');
       showToast('🌿 You feel calm and safe here.');
+      if (!this._tutorialShown.has('shrines')) {
+        this._tutorialShown.add('shrines');
+        setTimeout(() => showTutorial(
+          '✨ Three Guardian Shrines glow in the Calm Zone!\n' +
+          'Approach a glowing crystal and press E to claim a powerful tool.\n' +
+          'Use tools with Q to push Feeling-Spirits away! Press I for inventory.'
+        ), 1600);
+      }
     }
   }
   _checkFeelingProximity(player) {
@@ -1763,13 +2493,19 @@ class World {
       if (stone.inRange) anyNearStone = true;
     });
     const prompt = document.getElementById('interact-prompt');
-    if (this._wisdomActive || this.dlg.active) {
+    if (this._wisdomActive || this._shrineActive || this._minigameActive || this.dlg.active) {
       prompt.style.display = 'none';
     } else if (anyNearFE) {
       prompt.innerHTML = 'Press <kbd>E</kbd> to help';
       prompt.style.display = 'block';
     } else if (anyNearStone) {
       prompt.innerHTML = 'Press <kbd>E</kbd> to seek wisdom ✨';
+      prompt.style.display = 'block';
+    } else if (this._nearShrine) {
+      const owned = inventorySystem.tools.has(this._nearShrine.def.id);
+      prompt.innerHTML = 'Press <kbd>E</kbd> ' + (owned
+        ? 'to revisit ' + this._nearShrine.def.icon + ' ' + this._nearShrine.def.name
+        : 'to enter ' + this._nearShrine.def.icon + ' Sanctum — earn the ' + this._nearShrine.def.name);
       prompt.style.display = 'block';
     } else {
       prompt.style.display = 'none';
@@ -1801,6 +2537,7 @@ class World {
     if (this._biomeGracePeriod > 0) this._biomeGracePeriod -= delta;
     this.spinCrystals(delta);
     this._updateParticles(delta);
+    this._checkToolShrineProximity(player); // must run before _checkFeelingProximity
     this._checkFeelingProximity(player);
     this._checkBiomeEmotion(player);
     this._checkCrystals(player);
@@ -1808,8 +2545,10 @@ class World {
     this._animateMist(delta, player);
     this._updateDog(delta, player);
     this._animateMagicalStones(delta);
+    this._animateToolShrines(delta);
+    this._checkPotionPickup(player);
     if (this._playerHitCooldown > 0) this._playerHitCooldown -= delta;
-    const anyInteracting = this._wisdomActive || this.dlg.active ||
+    const anyInteracting = this._wisdomActive || this._shrineActive || this._minigameActive || this.dlg.active ||
       (this._dog && this._dog.petting > 0) || player.isBreathing;
     this._updateWisps(delta, player, anyInteracting);
   }
@@ -2025,6 +2764,172 @@ class World {
     showToast('\u2728 The ' + stone.name + ' has shared all its wisdom and fades away.');
   }
 
+  // ── Tool Shrine System ────────────────────────────────────────
+  _buildToolShrines(scene) {
+    TOOL_DEFS.forEach(def => {
+      const [px, , pz] = def.shrinePos;
+      const group = new THREE.Group();
+      group.position.set(px, 0, pz);
+
+      // Base slab
+      const baseMat = new THREE.MeshStandardMaterial({ color: 0xB8A890, roughness: 0.88, metalness: 0.1 });
+      const base = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.35, 0.3, 8), baseMat);
+      base.position.y = 0.15; base.castShadow = true; group.add(base);
+
+      // Crystal pillar
+      const pilMat = new THREE.MeshStandardMaterial({
+        color: def.emissiveHex, emissive: new THREE.Color(def.emissiveHex),
+        emissiveIntensity: 0.28, roughness: 0.68, metalness: 0.32,
+      });
+      const pil = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.32, 2.1, 6), pilMat);
+      pil.position.y = 1.35; pil.castShadow = true; group.add(pil);
+
+      // Floating octahedron orb
+      const orbMat = new THREE.MeshStandardMaterial({
+        color: def.emissiveHex, emissive: new THREE.Color(def.emissiveHex),
+        emissiveIntensity: 1.5, transparent: true, opacity: 0.9,
+        metalness: 0.4, roughness: 0.1,
+      });
+      const orb = new THREE.Mesh(new THREE.OctahedronGeometry(0.42, 1), orbMat);
+      orb.position.y = 2.9; orb.castShadow = true; group.add(orb);
+
+      // Orbit ring
+      const ringMat = new THREE.MeshStandardMaterial({
+        color: def.emissiveHex, emissive: new THREE.Color(def.emissiveHex),
+        emissiveIntensity: 0.95, transparent: true, opacity: 0.78,
+      });
+      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.68, 0.045, 6, 28), ringMat);
+      ring.position.y = 2.9; ring.rotation.x = Math.PI * 0.3; group.add(ring);
+
+      // Glow
+      const light = new THREE.PointLight(def.glowHex, 2.0, 9);
+      light.position.y = 2.9; group.add(light);
+
+      scene.add(group);
+      this._colliders.push({ x: px, z: pz, r: 1.4 });
+      this.toolShrines.push({ def, mesh: group, orb, ring, light, inRange: false });
+    });
+  }
+
+  _animateToolShrines(delta) {
+    const t = Date.now() * 0.001;
+    this.toolShrines.forEach((shrine, i) => {
+      const bob = Math.sin(t * 1.5 + i * 2.2) * 0.24;
+      shrine.orb.position.y   = 2.9 + bob;
+      shrine.ring.position.y  = 2.9 + bob;
+      shrine.ring.rotation.z += delta * 0.9;
+      shrine.ring.rotation.y += delta * 0.45;
+      shrine.light.intensity  = 1.6 + Math.sin(t * 2.1 + i * 1.9) * 0.55;
+    });
+  }
+
+  _checkToolShrineProximity(player) {
+    this._nearShrine = null;
+    this.toolShrines.forEach(shrine => {
+      const d = Math.hypot(
+        player.mesh.position.x - shrine.def.shrinePos[0],
+        player.mesh.position.z - shrine.def.shrinePos[2]
+      );
+      shrine.inRange = d < 4.2;
+      if (shrine.inRange) this._nearShrine = shrine;
+    });
+  }
+
+  _openShrine(shrine) {
+    // If already owned, open inventory/equip overlay directly
+    if (inventorySystem.tools.has(shrine.def.id)) {
+      this._shrineActive = true;
+      const flash = document.getElementById('portal-flash');
+      flash.classList.add('flash');
+      flash.addEventListener('animationend', () => flash.classList.remove('flash'), { once: true });
+      setTimeout(() => this._showShrineOverlay(), 380);
+    } else {
+      // Route through mini-game to earn the tool
+      miniGameSystem.open(shrine.def.id, this);
+    }
+  }
+
+  _showShrineOverlay() {
+    const grid = document.getElementById('shrine-tool-cards');
+    grid.innerHTML = '';
+    TOOL_DEFS.forEach(def => {
+      const owned = inventorySystem.tools.has(def.id);
+      const eq    = inventorySystem.equipped === def.id;
+      const card  = document.createElement('div');
+      card.className = 'shrine-tool-card' + (eq ? ' equipped' : '');
+      card.style.borderColor = def.color + (owned ? 'bb' : '40');
+      card.innerHTML =
+        '<div class="shrine-tool-icon">' + def.icon + '</div>' +
+        '<div class="shrine-tool-name" style="color:' + def.color + '">' + def.name + '</div>' +
+        '<div class="shrine-tool-effect">' + def.effect + '</div>' +
+        '<div class="shrine-tool-lore">' + def.lore + '</div>';
+      if (!owned) {
+        const tag = document.createElement('div');
+        tag.style.cssText = 'font-size:0.8rem;color:#94A3B8;font-style:italic;margin-top:6px';
+        tag.textContent = '🔒 Complete the Sanctum Challenge to earn this tool';
+        card.appendChild(tag);
+      } else if (!eq) {
+        const btn = document.createElement('button');
+        btn.className = 'shrine-equip-btn';
+        btn.textContent = 'Equip \u2192';
+        btn.addEventListener('click', () => {
+          inventorySystem.equipTool(def.id);
+          showToast(def.icon + ' ' + def.name + ' equipped! Press Q to use it.');
+          this._showShrineOverlay();
+        });
+        card.appendChild(btn);
+      } else {
+        const tag = document.createElement('div');
+        tag.style.cssText = 'font-size:0.76rem;color:var(--teal);font-weight:700;padding:3px 0';
+        tag.textContent = '\u2713 Equipped';
+        card.appendChild(tag);
+      }
+      grid.appendChild(card);
+    });
+    document.getElementById('shrine-overlay').style.display = 'flex';
+    const closeBtn = document.getElementById('shrine-return-btn');
+    const close = () => {
+      document.getElementById('shrine-overlay').style.display = 'none';
+      this._shrineActive = false;
+      closeBtn.removeEventListener('click', close);
+    };
+    closeBtn.addEventListener('click', close);
+  }
+
+  _spawnPotion(x, y, z) {
+    const mat = new THREE.MeshStandardMaterial({
+      color: 0xC084FC, emissive: new THREE.Color(0xC084FC),
+      emissiveIntensity: 1.4, transparent: true, opacity: 0.9,
+      metalness: 0.3, roughness: 0.1,
+    });
+    const mesh = new THREE.Mesh(new THREE.SphereGeometry(0.28, 8, 8), mat);
+    mesh.position.set(x, y, z);
+    mesh.castShadow = true;
+    this.scene.add(mesh);
+    const light = new THREE.PointLight(0x9333EA, 1.4, 5);
+    light.position.set(x, y + 0.35, z);
+    this.scene.add(light);
+    this.potionItems.push({ mesh, light, baseX: x, baseZ: z, phase: Math.random() * Math.PI * 2 });
+  }
+
+  _checkPotionPickup(player) {
+    const t = Date.now() * 0.001;
+    for (let i = this.potionItems.length - 1; i >= 0; i--) {
+      const p = this.potionItems[i];
+      p.mesh.position.y = 0.45 + Math.abs(Math.sin(t * 1.7 + p.phase)) * 0.38;
+      p.mesh.rotation.y += 0.018;
+      p.light.position.y = p.mesh.position.y + 0.35;
+      p.light.intensity = 1.1 + Math.sin(t * 2.6 + p.phase) * 0.45;
+      const dist = Math.hypot(p.baseX - player.mesh.position.x, p.baseZ - player.mesh.position.z);
+      if (dist < 1.5) {
+        this.scene.remove(p.mesh); this.scene.remove(p.light);
+        p.mesh.geometry.dispose(); p.mesh.material.dispose();
+        this.potionItems.splice(i, 1);
+        inventorySystem.collectPotion();
+      }
+    }
+  }
+
   // ── Feeling-enemy Wisps ──────────────────────────────────────────
   _buildWisps(scene) {
     WISP_DEFS.forEach(def => {
@@ -2198,6 +3103,12 @@ class World {
   }
 
   _onWispHit(wisp, player) {
+    // Wand shield — absorb the hit entirely
+    if (typeof inventorySystem !== 'undefined' && inventorySystem.isShielded()) {
+      showToast('\uD83E\uDE84 Validation Wand shield absorbed the feeling! You stayed calm.');
+      this._playerHitCooldown = 1.5;
+      return;
+    }
     // Downgrade regulation state
     const gm = this.gm;
     if      (gm.state === 'GREEN')  gm.setState('YELLOW');
@@ -2616,7 +3527,9 @@ camera.add(headLight);
 headLight.position.set(0, 2, 4);   // slightly above and in front of lens
 scene.add(camera);                  // camera must be in scene for its children to work
 
-const musicSystem = new MusicSystem();
+const musicSystem     = new MusicSystem();
+const inventorySystem = new InventorySystem();
+const miniGameSystem  = new MiniGameSystem();
 // Start audio on first user gesture (browser autoplay policy requires this)
 {
   const _startAudio = () => {
@@ -2653,9 +3566,25 @@ document.addEventListener('keydown', e => {
       // E also closes the wisdom overlay
       document.getElementById('wisdom-overlay').style.display = 'none';
       world._wisdomActive = false;
-    } else if (!dialogueSystem.active) {
+    } else if (world && world._shrineActive) {
+      document.getElementById('shrine-overlay').style.display = 'none';
+      world._shrineActive = false;
+    } else if (!dialogueSystem.active && !inventorySystem._active) {
       world.tryInteract(player);
     }
+  }
+  if (e.code === 'KeyI' && gameActive) {
+    if (inventorySystem._active) inventorySystem.closeInventory();
+    else if (!dialogueSystem.active && !world._wisdomActive && !world._shrineActive)
+      inventorySystem.openInventory();
+  }
+  if (e.code === 'KeyQ' && gameActive && !inventorySystem._active &&
+      !dialogueSystem.active && !world._wisdomActive && !world._shrineActive && !player.isBreathing) {
+    inventorySystem.useTool(world, player, gameManager);
+  }
+  if (e.code === 'KeyR' && gameActive && !inventorySystem._active &&
+      !dialogueSystem.active && !world._wisdomActive && !world._shrineActive) {
+    inventorySystem.usePotion(gameManager);
   }
   // +/- keys adjust ambient light and scale all other non-emissive lights proportionally
   const _BASE = { ambient: 0.8, hemi: 0.4, sun: 0.9, fill: 0.4, head: 0.5 };
@@ -2689,7 +3618,7 @@ window.addEventListener('resize', () => {
 let _drag = false, _lastMX = 0, _lastMY = 0;
 window.addEventListener('mousedown', e => {
   // Don't steal clicks from overlay UI buttons
-  if (e.target.closest('#dialogue-overlay, #social-story-overlay, #reflection-overlay')) return;
+  if (e.target.closest('#dialogue-overlay, #social-story-overlay, #reflection-overlay, #shrine-overlay, #inventory-overlay')) return;
   if (e.target.tagName === 'BUTTON' || e.target.tagName === 'KBD') return;
   _drag = true; _lastMX = e.clientX; _lastMY = e.clientY;
 });
@@ -2740,12 +3669,15 @@ function animate() {
       player.mesh.position.z
     );
     if (keys['Space'] && !dialogueSystem.active) player.startBreathing(scene);
-    if (!dialogueSystem.active) {
+    inventorySystem.update(delta);
+    const uiBlocking = dialogueSystem.active || world._shrineActive || world._minigameActive || inventorySystem._active;
+    if (!uiBlocking) {
       player.update(delta, keys, gameManager, scene, world);
       world.update(delta, player);
     } else {
       world.spinCrystals(delta);
       world._animateMagicalStones(delta);
+      world._animateToolShrines(delta);
       // Keep wisp lights pulsing even while frozen
       if (world._playerHitCooldown > 0) world._playerHitCooldown -= delta;
       world._updateWisps(delta, player, true /* frozen = anyInteracting=true */);
