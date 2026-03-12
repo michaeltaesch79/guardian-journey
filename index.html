@@ -1904,11 +1904,18 @@ class World {
         const portal = gltf.scene;
         const box = new THREE.Box3().setFromObject(portal);
         const maxSide = Math.max(box.max.x - box.min.x, box.max.z - box.min.z, 0.1);
-        portal.scale.setScalar(6 / maxSide);        // fit to ~6 units across
-        box.setFromObject(portal);
-        // Centre horizontally and float at spawn drop height
-        portal.position.set(0, 7 - (box.min.y * (6 / maxSide)), 0);
-        portal.traverse(c => { if (c.isMesh) { c.castShadow = false; c.receiveShadow = false; } });
+        const scale = 6 / maxSide;
+        const scaledMinY = box.min.y * scale;  // pre-scale min × scale factor
+        portal.scale.setScalar(scale);
+        // Place at the Sanctum Portal shrine location, sitting on the ground
+        portal.position.set(0, -scaledMinY, 12);
+        portal.traverse(c => {
+          if (c.isMesh) {
+            c.castShadow = false; c.receiveShadow = false;
+            if (c.material) { c.material.metalness = 0; c.material.needsUpdate = true; }
+            if (c.geometry && !c.geometry.attributes.normal) c.geometry.computeVertexNormals();
+          }
+        });
         s.add(portal);
         this._portalMesh = portal;
       });
