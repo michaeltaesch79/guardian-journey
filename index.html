@@ -153,6 +153,21 @@
     </div>
   </div>
 
+  <!-- ===== SANCTUM PORTAL SELECTION ===== -->
+  <div id="portal-select" style="display:none">
+    <div id="portal-select-box">
+      <div id="portal-select-hdr">
+        <span style="font-size:2.8rem">🌟</span>
+        <div>
+          <h2 style="margin:0;color:var(--teal)">Sanctum Portal</h2>
+          <p style="margin:4px 0 0;color:var(--text-dim);font-size:0.9rem">Choose a challenge to earn Guardian tools &amp; potions</p>
+        </div>
+      </div>
+      <div id="portal-challenge-grid"></div>
+      <button id="portal-select-close-btn">↩ Return to World</button>
+    </div>
+  </div>
+
   <!-- ===== MINI-GAME ZONE ===== -->
   <div id="minigame-overlay" style="display:none">
     <div id="minigame-box">
@@ -188,6 +203,12 @@
           <button class="mg-mirror-btn" data-dir="left">↺ Rotate Left</button>
           <button class="mg-mirror-btn" data-dir="right">↻ Rotate Right</button>
         </div>
+      </div>
+      <!-- Gratitude Garden card match -->
+      <div id="mg-match" style="display:none">
+        <div id="mg-match-grid"></div>
+        <p id="mg-match-status">Find all matching pairs!</p>
+        <p id="mg-match-pairs">Pairs matched: <span id="mg-match-count">0</span> / 3</p>
       </div>
       <div id="mg-result" style="display:none">
         <div id="mg-result-icon"></div>
@@ -1079,6 +1100,15 @@ const TOOL_DEFS = [
   },
 ];
 
+const POTION_CHALLENGE = {
+  id: 'potion', name: 'Gratitude Garden', icon: '\uD83C\uDF38',
+  color: '#F472B6', emissiveHex: 0xF472B6, glowHex: 0xDB2777,
+  desc: 'Flip matching emotion pairs to fill your heart with gratitude.',
+  effect: '+1 Emotion Potion — press R during battles to restore calm',
+  lore: '\u201cGratitude is the flower that blooms even in difficult seasons.\u201d',
+};
+const ALL_CHALLENGES = [...TOOL_DEFS, POTION_CHALLENGE];
+
 /* ================================================================
    INVENTORY SYSTEM — tools, potions, HUD rows & overlays
 ================================================================ */
@@ -1284,13 +1314,14 @@ class MiniGameSystem {
     this._toolId = toolId;
     world._minigameActive = true;
 
-    const def = TOOL_DEFS.find(t => t.id === toolId);
+    const def = ALL_CHALLENGES.find(t => t.id === toolId);
+    const isPotion = toolId === 'potion';
     document.getElementById('mg-icon').textContent     = def.icon;
-    document.getElementById('mg-title').textContent    = def.name + ' Sanctum';
+    document.getElementById('mg-title').textContent    = isPotion ? def.name : def.name + ' Sanctum';
     document.getElementById('mg-subtitle').textContent = def.lore;
 
     // hide all game panels + result
-    ['mg-sand','mg-breath','mg-mirror','mg-result'].forEach(id =>
+    ['mg-sand','mg-breath','mg-mirror','mg-match','mg-result'].forEach(id =>
       document.getElementById(id).style.display = 'none');
     document.getElementById('mg-quit-btn').style.display = 'block';
 
@@ -1303,6 +1334,7 @@ class MiniGameSystem {
       if      (toolId === 'wand')   this._startSand(def);
       else if (toolId === 'blade')  this._startBreath(def);
       else if (toolId === 'mirror') this._startMirror(def);
+      else if (toolId === 'potion') this._startGratitude(def);
     }, 420);
   }
 
@@ -1315,26 +1347,35 @@ class MiniGameSystem {
 
   _showResult(won, toolId) {
     if (this._cleanup) { this._cleanup(); this._cleanup = null; }
-    ['mg-sand','mg-breath','mg-mirror'].forEach(id =>
+    ['mg-sand','mg-breath','mg-mirror','mg-match'].forEach(id =>
       document.getElementById(id).style.display = 'none');
     document.getElementById('mg-quit-btn').style.display = 'none';
-    const def = TOOL_DEFS.find(t => t.id === toolId);
-    const result = document.getElementById('mg-result');
+    const def      = ALL_CHALLENGES.find(t => t.id === toolId);
+    const isPotion = toolId === 'potion';
+    const result   = document.getElementById('mg-result');
     document.getElementById('mg-result-icon').textContent = won ? '🏆' : '💙';
     document.getElementById('mg-result-msg').innerHTML = won
-      ? '<strong style="color:var(--teal)">' + def.icon + ' ' + def.name + ' earned!</strong><br>'
+      ? '<strong style="color:var(--teal)">' + def.icon + ' ' + (isPotion ? 'Emotion Potion' : def.name) + ' earned!</strong><br>'
         + def.lore + '<br><br><span style="color:#94A3B8;font-size:0.85rem">'
         + def.effect + '</span>'
       : 'Keep practising, Guardian. Every attempt makes you stronger.<br>'
-        + '<span style="color:#94A3B8;font-size:0.85rem">Try again to earn the ' + def.name + '.</span>';
+        + '<span style="color:#94A3B8;font-size:0.85rem">Try again to earn the '
+        + (isPotion ? 'Emotion Potion' : def.name) + '.</span>';
     const btn = document.getElementById('mg-result-btn');
-    btn.textContent = won ? def.icon + ' Claim & Return to World' : '🔄 Try Again';
-    btn.dataset.won = won ? '1' : '0';
+    btn.textContent = won
+      ? (isPotion ? '🌸 Collect Potion & Return' : def.icon + ' Claim & Return to World')
+      : '🔄 Try Again';
+    btn.dataset.won    = won ? '1' : '0';
     btn.dataset.toolId = toolId;
     result.style.display = 'flex';
 
     if (won) {
-      inventorySystem.collectTool(toolId);
+      if (isPotion) {
+        inventorySystem.collectPotion();
+        showToast('🌸 Emotion Potion collected! Press R when feeling overwhelmed.');
+      } else {
+        inventorySystem.collectTool(toolId);
+      }
       musicSystem.playJingle();
     }
   }
@@ -1348,10 +1389,11 @@ class MiniGameSystem {
       const toolId = btn.dataset.toolId;
       document.getElementById('mg-result').style.display = 'none';
       document.getElementById('mg-quit-btn').style.display = 'block';
-      const def = TOOL_DEFS.find(t => t.id === toolId);
+      const def = ALL_CHALLENGES.find(t => t.id === toolId);
       if      (toolId === 'wand')   this._startSand(def);
       else if (toolId === 'blade')  this._startBreath(def);
       else if (toolId === 'mirror') this._startMirror(def);
+      else if (toolId === 'potion') this._startGratitude(def);
     }
   }
 
@@ -1505,83 +1547,152 @@ class MiniGameSystem {
     };
   }
 
+  // ── GAME 4: Gratitude Garden — card matching (Potion) ──────────
+  _startGratitude(def) {
+    document.getElementById('mg-instruction').textContent =
+      'Flip the cards to find all 3 matching emotion pairs. Remember what you see and trust your heart! \uD83D\uDC99';
+    const panel = document.getElementById('mg-match');
+    panel.style.display = 'flex';
+    document.getElementById('mg-match-count').textContent = '0';
+    document.getElementById('mg-match-status').textContent = 'Find all matching pairs!';
+
+    const EMOJIS = ['\uD83C\uDF1F', '\uD83C\uDF1F', '\uD83D\uDC9B', '\uD83D\uDC9B', '\uD83C\uDF08', '\uD83C\uDF08'];
+    // Fisher-Yates shuffle
+    for (let i = EMOJIS.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      [EMOJIS[i], EMOJIS[j]] = [EMOJIS[j], EMOJIS[i]];
+    }
+    const grid = document.getElementById('mg-match-grid');
+    grid.innerHTML = '';
+    const cards = EMOJIS.map((emoji, i) => {
+      const el = document.createElement('div');
+      el.className = 'match-card';
+      el.dataset.emoji = emoji;
+      el.innerHTML = '<span class="card-back">\u2753</span>';
+      grid.appendChild(el);
+      return el;
+    });
+
+    let flipped = [], matched = 0, locked = false;
+    const onClick = (e) => {
+      const card = e.currentTarget;
+      if (locked || card.classList.contains('flipped') || card.classList.contains('matched')) return;
+      card.innerHTML = '<span class="card-face">' + card.dataset.emoji + '</span>';
+      card.classList.add('flipped');
+      flipped.push(card);
+      if (flipped.length === 2) {
+        locked = true;
+        const [a, b] = flipped;
+        if (a.dataset.emoji === b.dataset.emoji) {
+          // Matched!
+          a.classList.remove('flipped'); b.classList.remove('flipped');
+          a.classList.add('matched');    b.classList.add('matched');
+          flipped = []; locked = false; matched++;
+          document.getElementById('mg-match-count').textContent = matched;
+          const msgs = ['', '\uD83D\uDC99 Keep going!', '\u2B50 One more pair!', '\u2728 All pairs found!'];
+          document.getElementById('mg-match-status').textContent = msgs[matched] || '';
+          if (matched === 3) setTimeout(() => this._showResult(true, def.id), 700);
+        } else {
+          // No match
+          a.classList.add('wrong'); b.classList.add('wrong');
+          setTimeout(() => {
+            a.innerHTML = '<span class="card-back">\u2753</span>';
+            b.innerHTML = '<span class="card-back">\u2753</span>';
+            a.classList.remove('flipped', 'wrong');
+            b.classList.remove('flipped', 'wrong');
+            flipped = []; locked = false;
+          }, 950);
+        }
+      }
+    };
+    cards.forEach(c => c.addEventListener('click', onClick));
+
+    this._cleanup = () => {
+      cards.forEach(c => c.removeEventListener('click', onClick));
+      grid.innerHTML = '';
+      panel.style.display = 'none';
+    };
+  }
+
   // ── GAME 3: Mirror Perspective Puzzle (Mirror) ─────────────────
   _startMirror(def) {
     document.getElementById('mg-instruction').textContent =
-      'Select a mirror and rotate it to bounce the light beam onto all 3 Sadness targets. Illuminate them all to earn the Perspective Mirror!';
+      'Rotate the two purple mirrors to bounce the golden light beam onto the 😢 target. Click a mirror to select it, then use the rotate buttons.';
     const panel = document.getElementById('mg-mirror');
     panel.style.display = 'block';
-    document.getElementById('mg-mirror-msg').textContent = 'Click a mirror to select it, then rotate with the buttons below.';
+    document.getElementById('mg-mirror-msg').textContent =
+      'TIP: Mirror 1 deflects the beam up/down; Mirror 2 redirects it to the target.';
 
     const canvas = document.getElementById('mg-mirror-canvas');
     const ctx    = canvas.getContext('2d');
     const W = canvas.width, H = canvas.height;
 
-    // Mirrors: {x, y, angle (radians)}
+    // Puzzle layout — solution: M1 = -45°, M2 = 135°
+    // Source shoots RIGHT from left-centre.
+    // Correct path: source→M1 (beam deflects UP)→M2 (beam deflects RIGHT)→target
+    const SNAP = Math.PI / 4; // 45° increments
     const mirrors = [
-      { x: 160, y: 140, angle: Math.PI / 4  },
-      { x: 300, y: 80,  angle: -Math.PI / 6 },
-      { x: 380, y: 190, angle: Math.PI / 3  },
+      { x: 185, y: 130, angle: 0           }, // start 0°  → must reach -45°
+      { x: 185, y: 50,  angle: Math.PI / 4 }, // start 45° → must reach 135°
     ];
-    // Targets: {x, y, lit}
-    const targets = [
-      { x: 60,  y: 60,  lit: false },
-      { x: 440, y: 60,  lit: false },
-      { x: 260, y: 220, lit: false },
-    ];
-    const SOURCE = { x: 20, y: H / 2 };
-    let selected = 0;
+    const targets = [{ x: 420, y: 50, lit: false }];
+    const SOURCE  = { x: 20, y: 130 };
+    let selected  = 0;
 
+    // Reflect a unit direction (dx,dy) off a mirror whose line is at mirAngle
     const reflect = (dx, dy, mirAngle) => {
-      // Reflect direction vector across the mirror's normal
-      const nx = Math.cos(mirAngle + Math.PI / 2);
-      const ny = Math.sin(mirAngle + Math.PI / 2);
+      const nx  = Math.cos(mirAngle + Math.PI / 2);
+      const ny  = Math.sin(mirAngle + Math.PI / 2);
       const dot = dx * nx + dy * ny;
-      return { dx: dx - 2 * dot * nx, dy: dy - 2 * dot * ny };
+      const rdx = dx - 2 * dot * nx;
+      const rdy = dy - 2 * dot * ny;
+      const len = Math.hypot(rdx, rdy) || 1;
+      return { dx: rdx / len, dy: rdy / len };
     };
 
+    // Trace the ray, checking targets on EVERY segment
     const raytrace = () => {
       targets.forEach(t => t.lit = false);
       let x = SOURCE.x, y = SOURCE.y;
       let dx = 1, dy = 0;
       const segs = [{ x, y }];
-      const MAX_BOUNCES = mirrors.length + 1;
       const used = new Set();
-      for (let b = 0; b < MAX_BOUNCES; b++) {
+
+      for (let b = 0; b <= mirrors.length + 1; b++) {
+        // Find closest mirror the ray passes near
         let bestT = Infinity, bestM = -1;
         mirrors.forEach((m, i) => {
           if (used.has(i)) return;
           const ex = m.x - x, ey = m.y - y;
-          const t = (ex * dx + ey * dy) / (dx * dx + dy * dy);
-          if (t > 0.1) {
+          const t  = ex * dx + ey * dy; // projection (dx,dy already unit)
+          if (t > 2) {
             const px = x + t * dx - m.x, py = y + t * dy - m.y;
-            if (Math.hypot(px, py) < 18 && t < bestT) { bestT = t; bestM = i; }
+            if (Math.hypot(px, py) < 22 && t < bestT) { bestT = t; bestM = i; }
           }
         });
-        if (bestM === -1) {
-          // shoot to canvas edge
-          const tEdge = Math.min(
-            dx > 0 ? (W - x) / dx : dx < 0 ? -x / dx : Infinity,
-            dy > 0 ? (H - y) / dy : dy < 0 ? -y / dy : Infinity
-          );
-          const ex = x + tEdge * dx, ey = y + tEdge * dy;
-          segs.push({ x: ex, y: ey });
-          // check target hits
-          targets.forEach(t => {
-            // parameterise line for this segment and see if target is within 20px
-            const tx = t.x - x, ty = t.y - y;
-            const tp = tx * dx + ty * dy;
-            if (tp > 0) {
-              const perpDist = Math.abs(tx * dy - ty * dx);
-              if (perpDist < 20 && tp < tEdge + 5) t.lit = true;
-            }
-          });
-          break;
-        }
-        const m = mirrors[bestM];
-        x = x + bestT * dx; y = y + bestT * dy;
-        segs.push({ x, y });
-        const r = reflect(dx, dy, m.angle);
+
+        // Travel to mirror or canvas edge, whichever is closer
+        const tEdge = Math.min(
+          dx >  0.001 ? (W - x) / dx : dx < -0.001 ? -x / dx : Infinity,
+          dy >  0.001 ? (H - y) / dy : dy < -0.001 ? -y / dy : Infinity
+        );
+        const segEnd = (bestM !== -1 && bestT < tEdge) ? bestT : tEdge;
+        segs.push({ x: x + segEnd * dx, y: y + segEnd * dy });
+
+        // Check targets on THIS segment
+        targets.forEach(t => {
+          const tx = t.x - x, ty = t.y - y;
+          const tp = tx * dx + ty * dy;
+          if (tp > 0 && tp <= segEnd + 2) {
+            if (Math.abs(tx * dy - ty * dx) < 22) t.lit = true;
+          }
+        });
+
+        if (bestM === -1 || bestT >= tEdge) break; // hit edge, stop
+
+        // Advance to mirror and reflect
+        x += bestT * dx; y += bestT * dy;
+        const r = reflect(dx, dy, mirrors[bestM].angle);
         dx = r.dx; dy = r.dy;
         used.add(bestM);
       }
@@ -1592,58 +1703,73 @@ class MiniGameSystem {
       ctx.clearRect(0, 0, W, H);
       ctx.fillStyle = '#07050E'; ctx.fillRect(0, 0, W, H);
 
+      // Grid lines (faint)
+      ctx.strokeStyle = 'rgba(255,255,255,0.04)'; ctx.lineWidth = 1;
+      for (let gx = 40; gx < W; gx += 40) {
+        ctx.beginPath(); ctx.moveTo(gx, 0); ctx.lineTo(gx, H); ctx.stroke();
+      }
+      for (let gy = 40; gy < H; gy += 40) {
+        ctx.beginPath(); ctx.moveTo(0, gy); ctx.lineTo(W, gy); ctx.stroke();
+      }
+
       // Light beam
       const segs = raytrace();
       ctx.beginPath();
       ctx.moveTo(segs[0].x, segs[0].y);
       segs.forEach(s => ctx.lineTo(s.x, s.y));
-      ctx.strokeStyle = '#FFD700'; ctx.lineWidth = 2.5;
-      ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 12;
+      ctx.strokeStyle = '#FFD700'; ctx.lineWidth = 3;
+      ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 14;
       ctx.stroke(); ctx.shadowBlur = 0;
 
-      // Source
-      ctx.beginPath(); ctx.arc(SOURCE.x, SOURCE.y, 9, 0, Math.PI * 2);
-      ctx.fillStyle = '#FFD700'; ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 14;
+      // Source star
+      ctx.beginPath(); ctx.arc(SOURCE.x, SOURCE.y, 10, 0, Math.PI * 2);
+      ctx.fillStyle = '#FFD700'; ctx.shadowColor = '#FFD700'; ctx.shadowBlur = 18;
       ctx.fill(); ctx.shadowBlur = 0;
+      ctx.fillStyle = '#000'; ctx.font = 'bold 10px sans-serif';
+      ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+      ctx.fillText('☀', SOURCE.x, SOURCE.y);
 
-      // Targets
-      targets.forEach((t, i) => {
-        ctx.beginPath(); ctx.arc(t.x, t.y, 14, 0, Math.PI * 2);
-        ctx.fillStyle   = t.lit ? '#22C55E' : '#1E2A4A';
+      // Target
+      targets.forEach(t => {
+        ctx.beginPath(); ctx.arc(t.x, t.y, 18, 0, Math.PI * 2);
+        ctx.fillStyle   = t.lit ? 'rgba(34,197,94,0.35)' : 'rgba(30,42,74,0.9)';
         ctx.strokeStyle = t.lit ? '#4ADE80' : '#3B82F6';
         ctx.shadowColor = t.lit ? '#4ADE80' : '#3B82F6';
-        ctx.shadowBlur  = t.lit ? 18 : 5;
-        ctx.lineWidth = 2; ctx.fill(); ctx.stroke();
-        ctx.shadowBlur = 0;
-        ctx.fillStyle = t.lit ? '#fff' : '#60A5FA';
-        ctx.font = '11px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
-        ctx.fillText('😢', t.x, t.y);
+        ctx.shadowBlur  = t.lit ? 22 : 8;
+        ctx.lineWidth = 2.5; ctx.fill(); ctx.stroke(); ctx.shadowBlur = 0;
+        ctx.font = '18px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        ctx.fillText(t.lit ? '😊' : '😢', t.x, t.y);
       });
 
       // Mirrors
       mirrors.forEach((m, i) => {
-        const len = 28;
+        const len = 30;
         const mx0 = m.x - Math.cos(m.angle) * len, my0 = m.y - Math.sin(m.angle) * len;
         const mx1 = m.x + Math.cos(m.angle) * len, my1 = m.y + Math.sin(m.angle) * len;
         ctx.beginPath(); ctx.moveTo(mx0, my0); ctx.lineTo(mx1, my1);
-        ctx.strokeStyle = i === selected ? '#C084FC' : '#7C3AED';
-        ctx.lineWidth   = i === selected ? 5 : 3;
-        ctx.shadowColor = i === selected ? '#C084FC' : 'transparent';
-        ctx.shadowBlur  = i === selected ? 14 : 0;
+        ctx.strokeStyle = i === selected ? '#E879F9' : '#9333EA';
+        ctx.lineWidth   = i === selected ? 6 : 4;
+        ctx.shadowColor = i === selected ? '#E879F9' : 'transparent';
+        ctx.shadowBlur  = i === selected ? 18 : 0;
         ctx.stroke(); ctx.shadowBlur = 0;
-        // selection indicator
+
+        // Label
+        ctx.fillStyle = i === selected ? '#E879F9' : '#C084FC';
+        ctx.font = 'bold 11px sans-serif'; ctx.textAlign = 'center';
+        ctx.textBaseline = 'bottom';
+        const deg = Math.round(m.angle * 180 / Math.PI);
+        ctx.fillText('M' + (i + 1) + ' ' + deg + '°', m.x, m.y - len - 4);
+
+        // Selection ring
         if (i === selected) {
-          ctx.beginPath(); ctx.arc(m.x, m.y, 15, 0, Math.PI * 2);
-          ctx.strokeStyle = '#C084FC'; ctx.lineWidth = 1.5;
-          ctx.setLineDash([4,3]); ctx.stroke(); ctx.setLineDash([]);
+          ctx.beginPath(); ctx.arc(m.x, m.y, 18, 0, Math.PI * 2);
+          ctx.strokeStyle = '#E879F9'; ctx.lineWidth = 1.5;
+          ctx.setLineDash([4, 3]); ctx.stroke(); ctx.setLineDash([]);
         }
       });
-
-      // Click to select mirror
-      ctx.fillStyle = 'rgba(255,255,255,0)'; // invisible overlay
     };
 
-    // Click canvas to select nearest mirror
+    // Click canvas → select nearest mirror
     const onCanvasClick = (e) => {
       const rect = canvas.getBoundingClientRect();
       const sx = W / rect.width, sy = H / rect.height;
@@ -1653,19 +1779,18 @@ class MiniGameSystem {
         const d = Math.hypot(mx - m.x, my - m.y);
         if (d < bestD) { bestD = d; best = i; }
       });
-      selected = best;
-      draw();
+      selected = best; draw();
     };
     canvas.addEventListener('click', onCanvasClick);
 
+    // Rotate buttons — 45° snaps
     const rotateBtns = document.querySelectorAll('.mg-mirror-btn');
     const onRotate = (e) => {
       const dir = e.currentTarget.dataset.dir;
-      mirrors[selected].angle += dir === 'left' ? -Math.PI / 12 : Math.PI / 12;
+      mirrors[selected].angle += dir === 'left' ? -SNAP : SNAP;
       draw();
-      // Check win
       if (targets.every(t => t.lit)) {
-        this._showResult(true, def.id);
+        setTimeout(() => this._showResult(true, def.id), 300);
       }
     };
     rotateBtns.forEach(b => b.addEventListener('click', onRotate));
@@ -2404,10 +2529,10 @@ class World {
       this._openWisdom(stone);
       return;
     }
-    // Tool shrines
+    // Sanctum Portal
     if (this._nearShrine && !this.dlg.active) {
       document.getElementById('interact-prompt').style.display = 'none';
-      this._openShrine(this._nearShrine);
+      this._openShrine();
     }
   }
   _checkCrystals(player) {
@@ -2502,12 +2627,9 @@ class World {
       prompt.innerHTML = 'Press <kbd>E</kbd> to seek wisdom ✨';
       prompt.style.display = 'block';
     } else if (this._nearShrine) {
-      const owned = inventorySystem.tools.has(this._nearShrine.def.id);
-      prompt.innerHTML = 'Press <kbd>E</kbd> ' + (owned
-        ? 'to revisit ' + this._nearShrine.def.icon + ' ' + this._nearShrine.def.name
-        : 'to enter ' + this._nearShrine.def.icon + ' Sanctum — earn the ' + this._nearShrine.def.name);
+      prompt.innerHTML = 'Press <kbd>E</kbd> to enter the 🌟 Sanctum Portal';
       prompt.style.display = 'block';
-    } else {
+        } else {
       prompt.style.display = 'none';
     }
   }
@@ -2766,130 +2888,165 @@ class World {
 
   // ── Tool Shrine System ────────────────────────────────────────
   _buildToolShrines(scene) {
-    TOOL_DEFS.forEach(def => {
-      const [px, , pz] = def.shrinePos;
-      const group = new THREE.Group();
-      group.position.set(px, 0, pz);
+    // Single grand Sanctum Portal at the heart of the Calm Zone
+    const px = 0, pz = 12;
+    const group = new THREE.Group();
+    group.position.set(px, 0, pz);
 
-      // Base slab
-      const baseMat = new THREE.MeshStandardMaterial({ color: 0xB8A890, roughness: 0.88, metalness: 0.1 });
-      const base = new THREE.Mesh(new THREE.CylinderGeometry(1.1, 1.35, 0.3, 8), baseMat);
-      base.position.y = 0.15; base.castShadow = true; group.add(base);
+    // Octagonal stone platform
+    const baseMat = new THREE.MeshStandardMaterial({ color: 0xC8B89A, roughness: 0.82, metalness: 0.14 });
+    const base = new THREE.Mesh(new THREE.CylinderGeometry(2.6, 2.9, 0.28, 8), baseMat);
+    base.position.y = 0.14; base.castShadow = true; group.add(base);
 
-      // Crystal pillar
-      const pilMat = new THREE.MeshStandardMaterial({
-        color: def.emissiveHex, emissive: new THREE.Color(def.emissiveHex),
-        emissiveIntensity: 0.28, roughness: 0.68, metalness: 0.32,
-      });
-      const pil = new THREE.Mesh(new THREE.CylinderGeometry(0.26, 0.32, 2.1, 6), pilMat);
-      pil.position.y = 1.35; pil.castShadow = true; group.add(pil);
-
-      // Floating octahedron orb
-      const orbMat = new THREE.MeshStandardMaterial({
-        color: def.emissiveHex, emissive: new THREE.Color(def.emissiveHex),
-        emissiveIntensity: 1.5, transparent: true, opacity: 0.9,
-        metalness: 0.4, roughness: 0.1,
-      });
-      const orb = new THREE.Mesh(new THREE.OctahedronGeometry(0.42, 1), orbMat);
-      orb.position.y = 2.9; orb.castShadow = true; group.add(orb);
-
-      // Orbit ring
-      const ringMat = new THREE.MeshStandardMaterial({
-        color: def.emissiveHex, emissive: new THREE.Color(def.emissiveHex),
-        emissiveIntensity: 0.95, transparent: true, opacity: 0.78,
-      });
-      const ring = new THREE.Mesh(new THREE.TorusGeometry(0.68, 0.045, 6, 28), ringMat);
-      ring.position.y = 2.9; ring.rotation.x = Math.PI * 0.3; group.add(ring);
-
-      // Glow
-      const light = new THREE.PointLight(def.glowHex, 2.0, 9);
-      light.position.y = 2.9; group.add(light);
-
-      scene.add(group);
-      this._colliders.push({ x: px, z: pz, r: 1.4 });
-      this.toolShrines.push({ def, mesh: group, orb, ring, light, inRange: false });
+    // Central pillar
+    const pilMat = new THREE.MeshStandardMaterial({
+      color: 0x2DD4BF, emissive: new THREE.Color(0x2DD4BF),
+      emissiveIntensity: 0.35, roughness: 0.5, metalness: 0.55,
     });
+    const pil = new THREE.Mesh(new THREE.CylinderGeometry(0.22, 0.3, 4.0, 6), pilMat);
+    pil.position.y = 2.28; pil.castShadow = true; group.add(pil);
+
+    // Large outer glow ring (teal)
+    const ringMatA = new THREE.MeshStandardMaterial({
+      color: 0x2DD4BF, emissive: new THREE.Color(0x2DD4BF),
+      emissiveIntensity: 1.3, transparent: true, opacity: 0.88,
+    });
+    const ringA = new THREE.Mesh(new THREE.TorusGeometry(2.0, 0.08, 8, 44), ringMatA);
+    ringA.position.y = 4.2; group.add(ringA);
+
+    // Second ring (pink, tilted)
+    const ringMatB = new THREE.MeshStandardMaterial({
+      color: 0xF472B6, emissive: new THREE.Color(0xF472B6),
+      emissiveIntensity: 1.15, transparent: true, opacity: 0.78,
+    });
+    const ringB = new THREE.Mesh(new THREE.TorusGeometry(1.5, 0.065, 8, 38), ringMatB);
+    ringB.position.y = 4.2; ringB.rotation.x = Math.PI * 0.35; group.add(ringB);
+
+    // Third ring (purple)
+    const ringMatC = new THREE.MeshStandardMaterial({
+      color: 0xC084FC, emissive: new THREE.Color(0xC084FC),
+      emissiveIntensity: 1.0, transparent: true, opacity: 0.70,
+    });
+    const ringC = new THREE.Mesh(new THREE.TorusGeometry(1.1, 0.055, 8, 32), ringMatC);
+    ringC.position.y = 4.2; ringC.rotation.x = Math.PI * 0.65; group.add(ringC);
+
+    // Central golden star orb
+    const orbMat = new THREE.MeshStandardMaterial({
+      color: 0xFFD700, emissive: new THREE.Color(0xFFD700),
+      emissiveIntensity: 2.2, metalness: 0.6, roughness: 0.08,
+    });
+    const orb = new THREE.Mesh(new THREE.OctahedronGeometry(0.62, 2), orbMat);
+    orb.position.y = 4.2; group.add(orb);
+
+    // 4 small coloured orbs orbiting the base (one per challenge)
+    const CHALLENGE_COLORS = [0x22C55E, 0x67E8F9, 0xC084FC, 0xF472B6];
+    const miniOrbs = CHALLENGE_COLORS.map((col, i) => {
+      const mat = new THREE.MeshStandardMaterial({
+        color: col, emissive: new THREE.Color(col),
+        emissiveIntensity: 1.6, transparent: true, opacity: 0.85,
+      });
+      const mo = new THREE.Mesh(new THREE.SphereGeometry(0.2, 7, 7), mat);
+      mo.position.y = 1.1;
+      mo._orbitAngle = (i / CHALLENGE_COLORS.length) * Math.PI * 2;
+      group.add(mo);
+      return mo;
+    });
+
+    const light1 = new THREE.PointLight(0x2DD4BF, 4.0, 18);
+    light1.position.y = 4.2; group.add(light1);
+    const light2 = new THREE.PointLight(0xC084FC, 2.2, 12);
+    light2.position.set(0, 2.0, 0); group.add(light2);
+
+    scene.add(group);
+    this._colliders.push({ x: px, z: pz, r: 2.8 });
+    this.toolShrines = [{ mesh: group, orb, ringA, ringB, ringC, light1, light2, miniOrbs }];
   }
 
   _animateToolShrines(delta) {
-    const t = Date.now() * 0.001;
-    this.toolShrines.forEach((shrine, i) => {
-      const bob = Math.sin(t * 1.5 + i * 2.2) * 0.24;
-      shrine.orb.position.y   = 2.9 + bob;
-      shrine.ring.position.y  = 2.9 + bob;
-      shrine.ring.rotation.z += delta * 0.9;
-      shrine.ring.rotation.y += delta * 0.45;
-      shrine.light.intensity  = 1.6 + Math.sin(t * 2.1 + i * 1.9) * 0.55;
+    const p = this.toolShrines[0];
+    if (!p) return;
+    const t   = Date.now() * 0.001;
+    const bob = Math.sin(t * 1.2) * 0.34;
+    p.orb.position.y       = 4.2 + bob;
+    p.orb.rotation.y      += delta * 1.1;
+    p.ringA.position.y     = 4.2 + bob * 0.5;
+    p.ringA.rotation.z    += delta * 0.55;
+    p.ringB.position.y     = 4.2 + bob * 0.5;
+    p.ringB.rotation.y    += delta * 0.80;
+    p.ringC.position.y     = 4.2 + bob * 0.5;
+    p.ringC.rotation.x    += delta * 1.05;
+    p.light1.intensity     = 3.5 + Math.sin(t * 2.3) * 0.9;
+    p.light2.intensity     = 2.0 + Math.sin(t * 1.7 + 1.2) * 0.5;
+    // Orbit the 4 mini orbs around the base
+    p.miniOrbs.forEach((mo, i) => {
+      mo._orbitAngle += delta * (0.7 + i * 0.12);
+      mo.position.x   = Math.cos(mo._orbitAngle) * 1.5;
+      mo.position.z   = Math.sin(mo._orbitAngle) * 1.5;
+      mo.position.y   = 1.1 + Math.sin(t * 1.8 + i * 1.5) * 0.18;
     });
   }
 
   _checkToolShrineProximity(player) {
-    this._nearShrine = null;
-    this.toolShrines.forEach(shrine => {
-      const d = Math.hypot(
-        player.mesh.position.x - shrine.def.shrinePos[0],
-        player.mesh.position.z - shrine.def.shrinePos[2]
-      );
-      shrine.inRange = d < 4.2;
-      if (shrine.inRange) this._nearShrine = shrine;
-    });
+    const d = Math.hypot(player.mesh.position.x - 0, player.mesh.position.z - 12);
+    this._nearShrine = d < 5.5 ? true : null;
   }
 
-  _openShrine(shrine) {
-    // If already owned, open inventory/equip overlay directly
-    if (inventorySystem.tools.has(shrine.def.id)) {
-      this._shrineActive = true;
-      const flash = document.getElementById('portal-flash');
-      flash.classList.add('flash');
-      flash.addEventListener('animationend', () => flash.classList.remove('flash'), { once: true });
-      setTimeout(() => this._showShrineOverlay(), 380);
-    } else {
-      // Route through mini-game to earn the tool
-      miniGameSystem.open(shrine.def.id, this);
-    }
+  _openShrine() {
+    this._shrineActive = true;
+    const flash = document.getElementById('portal-flash');
+    flash.classList.add('flash');
+    flash.addEventListener('animationend', () => flash.classList.remove('flash'), { once: true });
+    setTimeout(() => this._showPortalSelect(), 380);
   }
 
-  _showShrineOverlay() {
-    const grid = document.getElementById('shrine-tool-cards');
+  _showPortalSelect() {
+    const grid = document.getElementById('portal-challenge-grid');
     grid.innerHTML = '';
-    TOOL_DEFS.forEach(def => {
-      const owned = inventorySystem.tools.has(def.id);
-      const eq    = inventorySystem.equipped === def.id;
-      const card  = document.createElement('div');
-      card.className = 'shrine-tool-card' + (eq ? ' equipped' : '');
-      card.style.borderColor = def.color + (owned ? 'bb' : '40');
+    ALL_CHALLENGES.forEach(def => {
+      const isPotion = def.id === 'potion';
+      const owned    = !isPotion && inventorySystem.tools.has(def.id);
+      const eq       = !isPotion && inventorySystem.equipped === def.id;
+      const card     = document.createElement('div');
+      card.className = 'challenge-card' + (owned || eq ? ' owned' : '');
+      card.style.setProperty('border-color', def.color + (owned || eq ? 'bb' : '40'));
       card.innerHTML =
-        '<div class="shrine-tool-icon">' + def.icon + '</div>' +
-        '<div class="shrine-tool-name" style="color:' + def.color + '">' + def.name + '</div>' +
-        '<div class="shrine-tool-effect">' + def.effect + '</div>' +
-        '<div class="shrine-tool-lore">' + def.lore + '</div>';
-      if (!owned) {
+        '<div class="challenge-card-icon">' + def.icon + '</div>' +
+        '<div class="challenge-card-name" style="color:' + def.color + '">' + def.name + '</div>' +
+        '<div class="challenge-card-desc">' + def.desc + '</div>' +
+        '<div class="challenge-card-effect">' + def.effect + '</div>';
+      if (eq) {
         const tag = document.createElement('div');
-        tag.style.cssText = 'font-size:0.8rem;color:#94A3B8;font-style:italic;margin-top:6px';
-        tag.textContent = '🔒 Complete the Sanctum Challenge to earn this tool';
+        tag.style.cssText = 'font-size:0.76rem;color:var(--teal);font-weight:700;margin-top:auto';
+        tag.textContent = '✓ Equipped — press Q to use';
         card.appendChild(tag);
-      } else if (!eq) {
+      } else if (owned) {
         const btn = document.createElement('button');
-        btn.className = 'shrine-equip-btn';
-        btn.textContent = 'Equip \u2192';
+        btn.className = 'challenge-equip-btn';
+        btn.textContent = 'Equip →';
         btn.addEventListener('click', () => {
           inventorySystem.equipTool(def.id);
           showToast(def.icon + ' ' + def.name + ' equipped! Press Q to use it.');
-          this._showShrineOverlay();
+          this._showPortalSelect();
         });
         card.appendChild(btn);
       } else {
-        const tag = document.createElement('div');
-        tag.style.cssText = 'font-size:0.76rem;color:var(--teal);font-weight:700;padding:3px 0';
-        tag.textContent = '\u2713 Equipped';
-        card.appendChild(tag);
+        const btn = document.createElement('button');
+        btn.className = 'challenge-play-btn';
+        btn.style.background = 'linear-gradient(135deg,' + def.color + ',#0891B2)';
+        btn.textContent = isPotion ? '🌸 Gratitude Garden' : '⚔️ Enter Sanctum';
+        btn.addEventListener('click', () => {
+          document.getElementById('portal-select').style.display = 'none';
+          this._shrineActive = false;
+          miniGameSystem.open(def.id, this);
+        });
+        card.appendChild(btn);
       }
       grid.appendChild(card);
     });
-    document.getElementById('shrine-overlay').style.display = 'flex';
-    const closeBtn = document.getElementById('shrine-return-btn');
+    document.getElementById('portal-select').style.display = 'flex';
+    const closeBtn = document.getElementById('portal-select-close-btn');
     const close = () => {
-      document.getElementById('shrine-overlay').style.display = 'none';
+      document.getElementById('portal-select').style.display = 'none';
       this._shrineActive = false;
       closeBtn.removeEventListener('click', close);
     };
@@ -3567,6 +3724,7 @@ document.addEventListener('keydown', e => {
       document.getElementById('wisdom-overlay').style.display = 'none';
       world._wisdomActive = false;
     } else if (world && world._shrineActive) {
+      document.getElementById('portal-select').style.display = 'none';
       document.getElementById('shrine-overlay').style.display = 'none';
       world._shrineActive = false;
     } else if (!dialogueSystem.active && !inventorySystem._active) {
@@ -3618,7 +3776,7 @@ window.addEventListener('resize', () => {
 let _drag = false, _lastMX = 0, _lastMY = 0;
 window.addEventListener('mousedown', e => {
   // Don't steal clicks from overlay UI buttons
-  if (e.target.closest('#dialogue-overlay, #social-story-overlay, #reflection-overlay, #shrine-overlay, #inventory-overlay')) return;
+  if (e.target.closest('#dialogue-overlay, #social-story-overlay, #reflection-overlay, #shrine-overlay, #portal-select, #inventory-overlay')) return;
   if (e.target.tagName === 'BUTTON' || e.target.tagName === 'KBD') return;
   _drag = true; _lastMX = e.clientX; _lastMY = e.clientY;
 });
